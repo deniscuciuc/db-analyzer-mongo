@@ -1,1 +1,364 @@
-# db-analyzer-mongo
+# MongoDB Analyzer
+
+[![Node.js 20+](https://img.shields.io/badge/node-20%2B-339933?logo=node.js)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/types-TypeScript-3178C6?logo=typescript)](https://www.typescriptlang.org/)
+[![Biome](https://img.shields.io/badge/code_style-Biome-60a5fa?logo=biome)](https://biomejs.dev/)
+[![pnpm](https://img.shields.io/badge/package_manager-pnpm-F69220?logo=pnpm)](https://pnpm.io/)
+
+A CLI tool that analyzes MongoDB databases for performance issues: index usage, slow queries, schema problems, fragmentation, replica-set health, and operational metrics. Outputs structured JSON for automation or rich Markdown reports for humans.
+
+> **Working with an AI agent?** See [.github/copilot-instructions.md](.github/copilot-instructions.md) for the integrated GitHub Copilot agent workflow and JSON contracts.
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Commands](#commands)
+- [CLI options](#cli-options)
+- [Output formats](#output-formats)
+- [Health score](#health-score)
+- [Programmatic usage](#programmatic-usage)
+- [Troubleshooting](#troubleshooting)
+- [Architecture](#architecture)
+
+---
+
+## Features
+
+### Index analysis
+
+- Detect unused indexes (with reasons to keep: unique, TTL, sparse).
+- Find missing indexes from slow-query patterns.
+- Detect duplicate / overlapping / prefix indexes.
+- Covering-index opportunities and index efficiency.
+
+### Query analysis
+
+- Slow queries via the MongoDB profiler (find/update/delete/insert/aggregate/findAndModify/bulkWrite).
+- Query anti-patterns: `$where`, unanchored `$regex`, negation operators, COLLSCAN.
+- Current operations, long-running operations, blocking operations.
+- Severity classification: critical / high / medium / low.
+
+### Schema analysis
+
+- Document structure and field-type variance.
+- Mixed types in the same field, sparse fields, oversize arrays / strings.
+- Cross-collection schema comparison.
+
+### Collection & storage
+
+- Collection stats (size, document count, index count).
+- Fragmentation detection with severity.
+- Compaction execution.
+- Index-to-data ratio.
+
+### System metrics
+
+- Database / storage / index size.
+- Cache hit ratio with diagnostics.
+- Connection statistics by client.
+- Replica-set status with **replication lag**.
+- Sharding / balancer status.
+- WiredTiger cache (eviction, checkpoint, dirty pages).
+- Oplog ops/sec.
+
+### Operations & health
+
+- Operations per second (queries / inserts / updates / deletes).
+- Read/write ratio, lock queues, active clients.
+- TTL index efficiency, document-size distribution.
+- Composite **health score (0–100)** with prioritized recommendations.
+
+---
+
+## Requirements
+
+- Node.js >= 20.12.0
+- pnpm >= 10
+- MongoDB 4.4+
+
+## Installation
+
+```bash
+pnpm install
+cp .env.example .env
+# edit .env with your connection details
+```
+
+## Configuration
+
+### Environment variables (`.env`)
+
+```bash
+# Recommended: full connection string (mongodb:// or mongodb+srv://)
+# Database name is taken from the path component.
+MONGODB_CONNECTION_STRING='mongodb+srv://user:password@cluster.mongodb.net/mydb?replicaSet=rs0&tls=true&authSource=admin'
+
+# Alternative: legacy URI
+# MONGO_URI=mongodb://localhost:27017
+# MONGO_DB=mydb
+
+# Or individual fields (used when no connection string is set)
+# MONGO_HOST=localhost
+# MONGO_PORT=27017
+# MONGO_USER=
+# MONGO_PASSWORD=
+# MONGO_AUTH_DB=admin
+# MONGO_DB=mydb
+```
+
+### Threshold tuning
+
+All analysis thresholds live in [`src/config/thresholds.ts`](src/config/thresholds.ts):
+
+```ts
+THRESHOLDS = {
+  fragmentation: { minor: 20, moderate: 30, high: 40, critical: 50 },
+  cache:         { excellent: 98, optimal: 95, acceptable: 90, poor: 80 },
+  indexes:       { minAccessesForUsed: 50, highIndexRatio: 50 },
+  queries:       { slowMs: 100, verySlowMs: 1000, criticalMs: 5000 },
+  // ...
+}
+```
+
+---
+
+## Usage
+
+### Interactive mode
+
+```bash
+pnpm start
+# or
+pnpm analyze -- -i
+```
+
+### npm scripts
+
+```bash
+# Analysis (JSON output unless noted)
+pnpm analyze              # Full analysis + Markdown report
+pnpm analyze:help         # Help
+pnpm analyze:health       # Health score + key metrics
+pnpm analyze:indexes      # Unused indexes
+pnpm analyze:queries      # Slow queries
+
+# Maintenance
+pnpm compact:check        # Collections with high fragmentation
+pnpm compact              # Run compact on fragmented collections
+
+# Profiler
+pnpm profiler:enable
+pnpm profiler:disable
+
+# Development
+pnpm build                # Compile TypeScript
+pnpm lint                 # Biome check
+pnpm lint:fix             # Biome auto-fix
+```
+
+### Direct CLI
+
+```bash
+# Any command via -c
+npx ts-node index.ts -j -c <command>
+
+# Examples
+npx ts-node index.ts -j -c health
+npx ts-node index.ts -j -c slow-queries
+npx ts-node index.ts --uri "mongodb+srv://..." -c full
+```
+
+---
+
+## Commands
+
+| Command              | Description                                    |
+| -------------------- | ---------------------------------------------- |
+| `health`             | Health score and metrics                       |
+| `unused-indexes`     | Index usage statistics                         |
+| `missing-indexes`    | Query patterns that need indexes               |
+| `duplicate-indexes`  | Overlapping / prefix indexes                   |
+| `slow-queries`       | Slow queries from the profiler                 |
+| `query-stats`        | Aggregated query statistics                    |
+| `query-antipatterns` | Detect inefficient query patterns              |
+| `current-ops`        | Currently running operations                   |
+| `long-running`       | Operations running > 1 minute                  |
+| `blocking`           | Operations waiting on locks                    |
+| `collections`        | Collection statistics                          |
+| `largest-collections`| Top collections by size                        |
+| `compact-needed`     | Collections with > 30% fragmentation           |
+| `run-compact`        | Run compact on selected collections            |
+| `auto-compact`       | Automatically compact fragmented collections   |
+| `schema`             | Schema overview                                |
+| `schema-issues`      | Schema problems                                |
+| `connections`        | Connection statistics                          |
+| `config`             | Server configuration settings                  |
+| `server-info`        | MongoDB server information                     |
+| `replica-set`        | Replica set status                             |
+| `sharding`           | Sharding status                                |
+| `wiredtiger`         | WiredTiger cache statistics                    |
+| `oplog`              | Oplog statistics                               |
+| `enable-profiler`    | Enable profiler (level 1, slow ops)            |
+| `disable-profiler`   | Disable profiler                               |
+| `profiler-status`    | Current profiler status                        |
+
+## CLI options
+
+| Option                          | Short | Description                                  | Default     |
+| ------------------------------- | ----- | -------------------------------------------- | ----------- |
+| `--uri <uri>`                   |       | MongoDB URI (overrides individual params)    | -           |
+| `--host <host>`                 | `-h`  | Host                                         | `localhost` |
+| `--port <port>`                 | `-p`  | Port                                         | `27017`     |
+| `--database <name>`             | `-d`  | Database name                                | -           |
+| `--user <user>`                 | `-U`  | User                                         | -           |
+| `--password <pass>`             | `-W`  | Password                                     | -           |
+| `--authSource <db>`             |       | Auth database                                | `admin`     |
+| `--slow-query-threshold <ms>`   |       | Slow-query threshold                         | `100`       |
+| `--min-index-accesses <n>`      |       | Min accesses to consider an index "used"     | `50`        |
+| `--output <dir>`                | `-o`  | Reports directory                            | `./reports` |
+| `--command <cmd>`               | `-c`  | Run a single command (see table)             | `full`      |
+| `--json`                        | `-j`  | JSON output                                  | `false`     |
+| `--quiet`                       | `-q`  | Suppress progress output                     | `false`     |
+| `--interactive`                 | `-i`  | Interactive menu                             | `false`     |
+
+---
+
+## Output formats
+
+### Markdown report
+
+Generated by `pnpm analyze`. Includes:
+
+- Executive summary with health score
+- Database / operation / lock metrics
+- Index analysis (unused / missing / duplicate / TTL)
+- Collection analysis + document size distribution
+- Slow queries (with severity) and anti-patterns
+- Schema issues
+- Fragmentation
+- WiredTiger / replica-set / connection sections
+- Prioritized recommendations
+
+Saved to `./reports/mongodb-analysis-{timestamp}.md`.
+
+### JSON report
+
+```json
+{
+  "generatedAt": "2026-01-01T00:00:00.000Z",
+  "databaseName": "mydb",
+  "healthScore": 85,
+  "metrics": { "...": "..." },
+  "unusedIndexes": [],
+  "missingIndexes": [],
+  "duplicateIndexes": [],
+  "collectionStats": [],
+  "slowQueries": [],
+  "fragmentedCollections": [],
+  "queryAntiPatterns": [],
+  "schemaIssues": [],
+  "recommendations": [],
+  "errors": []
+}
+```
+
+---
+
+## Health score
+
+| Score   | Status    | Action                  |
+| ------- | --------- | ----------------------- |
+| 90–100  | Excellent | Monitor only            |
+| 70–89   | Good      | Plan optimization       |
+| 50–69   | Warning   | Needs attention         |
+| 0–49    | Critical  | Immediate action needed |
+
+---
+
+## Programmatic usage
+
+```ts
+import { MongoDBAnalyzer } from "@deniscuciuc/db-analyzer-mongo";
+
+const analyzer = await MongoDBAnalyzer.connect({
+  uri: process.env.MONGODB_CONNECTION_STRING!,
+  database: "mydb",
+});
+
+const report = await analyzer.analyze();
+analyzer.printSummary(report);
+await analyzer.generateReport(report);
+await analyzer.close();
+```
+
+---
+
+## Troubleshooting
+
+| Symptom                                  | Cause                          | Fix                                                  |
+| ---------------------------------------- | ------------------------------ | ---------------------------------------------------- |
+| `MongoNetworkError`                      | Cannot reach MongoDB           | Check connection string, network, firewall          |
+| `Authentication failed` (code 18)        | Bad credentials / `authSource` | Verify user, password, and `authSource` in URI      |
+| `not authorized` (code 13)               | Insufficient privileges        | Grant `dbAdmin` or `clusterMonitor`                 |
+| Empty slow queries                       | Profiler disabled              | `pnpm profiler:enable` and wait for traffic         |
+| Some metrics missing on sharded clusters | Limited support                | Run against a config server or each shard separately|
+
+---
+
+## Architecture
+
+```
+db-analyzer-mongo/
+├── index.ts                         # Entry point + CLI
+├── package.json
+├── src/
+│   ├── types.ts                     # Shared types
+│   ├── interactive.ts               # Interactive CLI
+│   ├── config/thresholds.ts         # Tunable thresholds
+│   ├── utils/{formatting,health,errors}.ts
+│   ├── analyzers/
+│   │   ├── collection-analyzer.ts
+│   │   ├── index-analyzer.ts
+│   │   ├── query-analyzer.ts
+│   │   └── schema-analyzer.ts
+│   ├── collectors/stats-collector.ts
+│   └── reporters/report-generator.ts
+├── .github/copilot-instructions.md  # AI agent workflow
+├── .env.example
+└── reports/                         # Generated reports (gitignored)
+```
+
+| Class                | Responsibility                                       |
+| -------------------- | ---------------------------------------------------- |
+| `CollectionAnalyzer` | Stats, fragmentation, compaction                     |
+| `IndexAnalyzer`      | Unused / missing / duplicate indexes                 |
+| `QueryAnalyzer`      | Slow queries, anti-patterns, ops                     |
+| `SchemaAnalyzer`     | Document structure and field types                   |
+| `StatsCollector`     | Metrics, replica set, sharding, WiredTiger, oplog    |
+| `ReportGenerator`    | Markdown + JSON report output                        |
+
+## Contributing
+
+Contributions are welcome! Here's how to get started:
+
+1. Fork the repo and create a feature branch
+2. Run `pnpm install` to install dependencies
+3. Copy `.env.example` to `.env` and configure your connection
+4. Make your changes and ensure `pnpm lint` passes
+5. Open a pull request
+
+**Coding standards:**
+- TypeScript with strict mode enabled
+- Code formatted with Biome (tab indent, 2-space width)
+- All changes must pass `pnpm lint` and `pnpm build`
+
+## License
+
+MIT — see [LICENSE](LICENSE).
