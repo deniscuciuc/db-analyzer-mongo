@@ -170,7 +170,6 @@ export class SchemaAnalyzer {
 			try {
 				const analysis = await this.analyzeCollection(collName, sampleSize);
 
-				// Check for mixed types
 				for (const field of analysis.fields) {
 					if (field.types.length > 1) {
 						const nonNullTypes = field.types.filter(
@@ -370,8 +369,6 @@ export class SchemaAnalyzer {
 		return this.errorCollector.getErrors();
 	}
 
-	// Private methods
-
 	private analyzeDocument(
 		doc: any,
 		prefix: string,
@@ -460,7 +457,6 @@ export class SchemaAnalyzer {
 	): number {
 		if (fields.length === 0) return 0;
 
-		// Calculate variance based on field presence
 		const presenceValues = fields.map((f) => f.presence);
 		const avgPresence =
 			presenceValues.reduce((a, b) => a + b, 0) / presenceValues.length;
@@ -481,14 +477,12 @@ export class SchemaAnalyzer {
 	): string[] {
 		const recommendations: string[] = [];
 
-		// Check for high schema variance
 		if (schemaVariance > 30) {
 			recommendations.push(
 				"High schema variance detected. Consider using MongoDB schema validation to enforce consistent document structure.",
 			);
 		}
 
-		// Check for deeply nested objects
 		const deepNesting = fields.filter(
 			(f) => f.path.split(".").length > 3 && f.hasNestedObjects,
 		);
@@ -498,7 +492,6 @@ export class SchemaAnalyzer {
 			);
 		}
 
-		// Check for fields with multiple types
 		const mixedTypeFields = fields.filter(
 			(f) =>
 				f.types.filter((t) => t.type !== "null" && t.type !== "undefined")
@@ -510,7 +503,6 @@ export class SchemaAnalyzer {
 			);
 		}
 
-		// Check for sparse fields
 		const sparseFields = fields.filter(
 			(f) => f.presence < 50 && f.presence > 5,
 		);
