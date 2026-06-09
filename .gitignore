@@ -1,0 +1,9 @@
+node_modules/
+.pnpm-store/
+dist/
+.env
+*.log
+reports/*.md
+reports/*.json
+!reports/.gitkeep
+**/.claude/
