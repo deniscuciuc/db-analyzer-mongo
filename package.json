@@ -63,7 +63,7 @@
     "release:major": "npm version major && git push && git push --tags"
   },
   "dependencies": {
-    "@inquirer/prompts": "^8.1.0",
+    "@inquirer/prompts": "^8.5.2",
     "mongodb": "^6.12.0"
   },
   "devDependencies": {
