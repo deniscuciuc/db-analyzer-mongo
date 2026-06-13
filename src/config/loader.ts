@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
-import type { ThresholdOverrides } from "./types";
+import type { ThresholdOverrides } from "../types";
 
 export interface ProfileConfig {
 	uri?: string;
@@ -92,4 +92,8 @@ export function resolveProfile(
 	}
 
 	return profile;
+}
+
+export function listProfiles(config: AnalyzerConfig): string[] {
+	return Object.keys(config.profiles ?? {});
 }

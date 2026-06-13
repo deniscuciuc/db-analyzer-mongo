@@ -241,11 +241,14 @@ db.runCommand({ compact: "collection_name" })
 ## File layout (for navigation)
 
 ```
-index.ts                          # CLI entry, command dispatch
-src/interactive.ts                # Interactive menu
+index.ts                                  # CLI entry, bootstrap only
+src/cli/{options,runner}.ts               # CLI parsing and command execution
+src/config/{loader,thresholds}.ts         # Config loading and tunable thresholds
+src/constants.ts                          # Commands, defaults, watch rules
+src/interactive/{index,display,menus}.ts  # Interactive UI
 src/analyzers/{collection,index,query,schema}-analyzer.ts
-src/collectors/stats-collector.ts # Database metrics
-src/reporters/report-generator.ts # Markdown + JSON output
-src/config/thresholds.ts          # Tunable thresholds
-src/utils/{formatting,health,errors}.ts
+src/collectors/stats-collector.ts         # Database metrics
+src/reporters/report-generator.ts         # Markdown + JSON output
+src/utils/{format,formatting,health,errors,print}.ts
+src/watch/runner.ts                       # Watch mode loop
 ```
