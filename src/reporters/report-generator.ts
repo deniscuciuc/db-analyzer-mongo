@@ -3,6 +3,7 @@ import * as path from "node:path";
 import type {
 	AnalysisErrorInfo,
 	AnalysisReport,
+	AnalyzerOptions,
 	CollectionStats,
 	ConnectionStats,
 	DatabaseMetrics,
@@ -17,9 +18,13 @@ import type {
 } from "../types";
 import { formatBytes, formatMs } from "../utils/formatting";
 import { calculateHealthScore } from "../utils/health";
+import { HtmlReporter } from "./html-reporter";
 
 export class ReportGenerator {
-	constructor(private outputDir: string = "./reports") {}
+	constructor(
+		private outputDir: string = "./reports",
+		private options: AnalyzerOptions = {},
+	) {}
 
 	async generateFullReport(
 		report: AnalysisReport,
@@ -47,6 +52,23 @@ export class ReportGenerator {
 
 		await this.ensureOutputDir();
 		fs.writeFileSync(filepath, JSON.stringify(report, null, 2));
+
+		return filepath;
+	}
+
+	async generateHtmlReport(
+		report: AnalysisReport,
+		timestamp?: string,
+	): Promise<string> {
+		const ts = timestamp ?? new Date().toISOString().replace(/[:.]/g, "-");
+		const filename = `mongodb-analysis-${ts}.html`;
+		const filepath = path.join(this.outputDir, filename);
+
+		await this.ensureOutputDir();
+		fs.writeFileSync(
+			filepath,
+			HtmlReporter.generate(report, this.options.thresholds),
+		);
 
 		return filepath;
 	}
@@ -666,13 +688,16 @@ ${issues.length > 0 ? issues.join("\n") : "- No critical issues found"}
 		score: number;
 		issues: string[];
 	} {
-		const health = calculateHealthScore({
-			metrics: report.metrics,
-			unusedIndexesCount: report.unusedIndexes.length,
-			missingIndexesCount: report.missingIndexes.length,
-			slowQueriesCount: report.slowQueries.length,
-			fragmentedCollectionsCount: report.fragmentedCollections.length,
-		});
+		const health = calculateHealthScore(
+			{
+				metrics: report.metrics,
+				unusedIndexesCount: report.unusedIndexes.length,
+				missingIndexesCount: report.missingIndexes.length,
+				slowQueriesCount: report.slowQueries.length,
+				fragmentedCollectionsCount: report.fragmentedCollections.length,
+			},
+			this.options.thresholds,
+		);
 
 		return { score: health.score, issues: health.issues };
 	}

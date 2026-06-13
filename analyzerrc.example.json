@@ -1,0 +1,18 @@
+{
+  "profiles": {
+    "local": {
+      "uri": "mongodb://localhost:27017",
+      "database": "mydb"
+    },
+    "atlas": {
+      "uri": "mongodb+srv://user:pass@cluster.mongodb.net/mydb"
+    }
+  },
+  "defaultProfile": "local",
+  "thresholds": {
+    "fragmentation": { "minor": 20, "moderate": 30, "high": 40, "critical": 50 },
+    "cache": { "excellent": 98, "optimal": 95, "acceptable": 90, "poor": 80 },
+    "queries": { "slowMs": 100, "verySlowMs": 1000, "criticalMs": 5000 }
+  },
+  "output": "./reports"
+}

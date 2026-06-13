@@ -1,5 +1,9 @@
 import type { Db } from "mongodb";
-import { getFragmentationSeverity, THRESHOLDS } from "../config/thresholds";
+import {
+	getFragmentationSeverity,
+	getThresholds,
+	THRESHOLDS,
+} from "../config/thresholds";
 import type {
 	AnalyzerOptions,
 	CollectionStats,
@@ -7,6 +11,7 @@ import type {
 	CompactSummary,
 	FragmentedCollection,
 } from "../types";
+import { filterCollectionNames } from "../utils/collection-filters";
 import { ErrorCollector } from "../utils/errors";
 import { formatBytes } from "../utils/formatting";
 
@@ -58,6 +63,7 @@ export class CollectionAnalyzer {
 	async getFragmentedCollections(): Promise<FragmentedCollection[]> {
 		const fragmented: FragmentedCollection[] = [];
 		const collections = await this.getCollections();
+		const thresholds = getThresholds(this.options.thresholds);
 
 		for (const collName of collections) {
 			try {
@@ -70,8 +76,11 @@ export class CollectionAnalyzer {
 					const fragmentationRatio =
 						((storageSize - dataSize) / storageSize) * 100;
 
-					if (fragmentationRatio > THRESHOLDS.fragmentation.minor) {
-						const severity = getFragmentationSeverity(fragmentationRatio);
+					if (fragmentationRatio > thresholds.fragmentation.minor) {
+						const severity = getFragmentationSeverity(
+							fragmentationRatio,
+							thresholds,
+						);
 						fragmented.push({
 							collection: collName,
 							storageSize: formatBytes(storageSize),
@@ -102,8 +111,9 @@ export class CollectionAnalyzer {
 
 	async getCollectionsNeedingCompact(): Promise<FragmentedCollection[]> {
 		const fragmented = await this.getFragmentedCollections();
+		const thresholds = getThresholds(this.options.thresholds);
 		return fragmented.filter(
-			(f) => f.fragmentationRatio > THRESHOLDS.fragmentation.moderate,
+			(f) => f.fragmentationRatio > thresholds.fragmentation.moderate,
 		);
 	}
 
@@ -370,13 +380,16 @@ export class CollectionAnalyzer {
 		const excludeCollections = this.options.excludeCollections ?? [];
 		const includeSystem = this.options.includeSystemCollections ?? false;
 
-		return collections
-			.map((c) => c.name)
-			.filter((name) => {
-				if (excludeCollections.includes(name)) return false;
-				if (!includeSystem && name.startsWith("system.")) return false;
-				return true;
-			});
+		return filterCollectionNames(
+			collections
+				.map((c) => c.name)
+				.filter((name) => {
+					if (excludeCollections.includes(name)) return false;
+					if (!includeSystem && name.startsWith("system.")) return false;
+					return true;
+				}),
+			this.options.collections,
+		);
 	}
 
 	private calculateCompressionRatio(collStats: any): number | undefined {
@@ -399,13 +412,14 @@ export class CollectionAnalyzer {
 		ratio: number,
 		_storageSize: number,
 	): string {
-		if (ratio > THRESHOLDS.fragmentation.critical) {
+		const thresholds = getThresholds(this.options.thresholds);
+		if (ratio > thresholds.fragmentation.critical) {
 			return "Critical fragmentation. Run compact command immediately to reclaim space.";
 		}
-		if (ratio > THRESHOLDS.fragmentation.high) {
+		if (ratio > thresholds.fragmentation.high) {
 			return "High fragmentation. Schedule compact during maintenance window.";
 		}
-		if (ratio > THRESHOLDS.fragmentation.moderate) {
+		if (ratio > thresholds.fragmentation.moderate) {
 			return "Moderate fragmentation. Consider running compact.";
 		}
 		return "Minor fragmentation. Monitor and compact if storage becomes an issue.";

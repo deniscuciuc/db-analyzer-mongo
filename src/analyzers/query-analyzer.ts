@@ -1,6 +1,10 @@
 import type { Db } from "mongodb";
 
-import { getQueryTimeSeverity, THRESHOLDS } from "../config/thresholds";
+import {
+	getQueryTimeSeverity,
+	getThresholds,
+	THRESHOLDS,
+} from "../config/thresholds";
 import type {
 	AnalyzerOptions,
 	BlockingOperation,
@@ -10,6 +14,10 @@ import type {
 	QueryStats,
 	SlowQuery,
 } from "../types";
+import {
+	buildNamespaceFilter,
+	getCollectionNameFromNamespace,
+} from "../utils/collection-filters";
 import { ErrorCollector } from "../utils/errors";
 import { formatDuration } from "../utils/formatting";
 
@@ -39,14 +47,15 @@ export class QueryAnalyzer {
 	) {}
 
 	async checkProfilerEnabled(): Promise<{ level: number; slowMs: number }> {
+		const thresholds = getThresholds(this.options.thresholds);
 		try {
 			const result = await this.db.command({ profile: -1 });
 			return {
 				level: result.was ?? 0,
-				slowMs: result.slowms ?? THRESHOLDS.queries.slowMs,
+				slowMs: result.slowms ?? thresholds.queries.slowMs,
 			};
 		} catch {
-			return { level: 0, slowMs: THRESHOLDS.queries.slowMs };
+			return { level: 0, slowMs: thresholds.queries.slowMs };
 		}
 	}
 
@@ -64,8 +73,10 @@ export class QueryAnalyzer {
 		}
 
 		const thresholdMs =
-			this.options.slowQueryThresholdMs ?? THRESHOLDS.queries.slowMs;
+			this.options.slowQueryThresholdMs ??
+			getThresholds(this.options.thresholds).queries.slowMs;
 		const limit = this.options.topQueriesLimit ?? 50;
+		const thresholds = getThresholds(this.options.thresholds);
 
 		try {
 			const slowQueries = await this.db
@@ -73,6 +84,10 @@ export class QueryAnalyzer {
 				.find({
 					millis: { $gte: thresholdMs },
 					op: { $in: QUERY_OPERATIONS },
+					...buildNamespaceFilter(
+						this.db.databaseName,
+						this.options.collections,
+					),
 				})
 				.sort({ millis: -1 })
 				.limit(limit)
@@ -126,7 +141,7 @@ export class QueryAnalyzer {
 					keysExamined: sample.keysExamined ?? 0,
 					planSummary: sample.planSummary ?? "N/A",
 					recommendations: this.generateQueryRecommendations(sample, data),
-					severity: getQueryTimeSeverity(avgTime),
+					severity: getQueryTimeSeverity(avgTime, thresholds),
 				});
 			}
 
@@ -157,6 +172,10 @@ export class QueryAnalyzer {
 				.collection("system.profile")
 				.find({
 					op: { $in: QUERY_OPERATIONS },
+					...buildNamespaceFilter(
+						this.db.databaseName,
+						this.options.collections,
+					),
 				})
 				.sort({ ts: -1 })
 				.limit(1000)
@@ -227,7 +246,10 @@ export class QueryAnalyzer {
 			const ops = result.inprog ?? [];
 
 			return ops
-				.filter((op: any) => op.op && op.op !== "none")
+				.filter(
+					(op: any) =>
+						op.op && op.op !== "none" && this.isSelectedNamespace(op.ns ?? ""),
+				)
 				.map((op: any) => {
 					const runningTime = op.microsecs_running
 						? Math.round(op.microsecs_running / 1000)
@@ -269,7 +291,10 @@ export class QueryAnalyzer {
 			const ops = result.inprog ?? [];
 
 			const blocking = ops
-				.filter((op: any) => op.waitingForLock === true)
+				.filter(
+					(op: any) =>
+						op.waitingForLock === true && this.isSelectedNamespace(op.ns ?? ""),
+				)
 				.map((op: any) => {
 					const waitingTime = op.microsecs_running
 						? Math.round(op.microsecs_running / 1000)
@@ -354,7 +379,13 @@ export class QueryAnalyzer {
 		try {
 			const profilerData = await this.db
 				.collection("system.profile")
-				.find({ op: { $in: QUERY_OPERATIONS } })
+				.find({
+					op: { $in: QUERY_OPERATIONS },
+					...buildNamespaceFilter(
+						this.db.databaseName,
+						this.options.collections,
+					),
+				})
 				.sort({ ts: -1 })
 				.limit(500)
 				.toArray();
@@ -492,6 +523,7 @@ export class QueryAnalyzer {
 		query: any,
 		data: { queries: any[]; totalTime: number; count: number },
 	): string[] {
+		const thresholds = getThresholds(this.options.thresholds);
 		const recommendations: string[] = [];
 		const planSummary = query.planSummary ?? "";
 		const docsExamined = query.docsExamined ?? 0;
@@ -507,7 +539,7 @@ export class QueryAnalyzer {
 
 		if (
 			docsReturned > 0 &&
-			docsExamined / docsReturned > THRESHOLDS.queries.inefficientDocsRatio
+			docsExamined / docsReturned > thresholds.queries.inefficientDocsRatio
 		) {
 			recommendations.push(
 				`High examination ratio: ${docsExamined} docs examined for ${docsReturned} returned. Index may not be optimal.`,
@@ -516,22 +548,22 @@ export class QueryAnalyzer {
 
 		if (
 			keysExamined === 0 &&
-			docsExamined > THRESHOLDS.queries.minDocsExaminedForFlag
+			docsExamined > thresholds.queries.minDocsExaminedForFlag
 		) {
 			recommendations.push(
 				"No index keys examined. Query is likely performing a full collection scan.",
 			);
 		}
 
-		if (avgTime > THRESHOLDS.queries.verySlowMs) {
+		if (avgTime > thresholds.queries.verySlowMs) {
 			recommendations.push(
 				"Query takes over 1 second on average. Review query structure and indexes.",
 			);
 		}
 
 		if (
-			data.count > THRESHOLDS.queries.highFrequencyCount &&
-			avgTime > THRESHOLDS.queries.slowMs
+			data.count > thresholds.queries.highFrequencyCount &&
+			avgTime > thresholds.queries.slowMs
 		) {
 			recommendations.push(
 				`Query executed ${data.count} times with avg ${Math.round(avgTime)}ms. High-impact optimization candidate.`,
@@ -539,6 +571,22 @@ export class QueryAnalyzer {
 		}
 
 		return recommendations;
+	}
+
+	private isSelectedNamespace(namespace: string): boolean {
+		if (
+			!namespace ||
+			!this.options.collections ||
+			this.options.collections.length === 0
+		) {
+			return true;
+		}
+
+		const collectionName = getCollectionNameFromNamespace(
+			namespace,
+			this.db.databaseName,
+		);
+		return this.options.collections.includes(collectionName);
 	}
 
 	generateQueryReport(slowQueries: SlowQuery[]): {

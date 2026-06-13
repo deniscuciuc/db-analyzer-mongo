@@ -1,10 +1,13 @@
+import { existsSync, readFileSync } from "node:fs";
 import { type Db, MongoClient } from "mongodb";
 import { CollectionAnalyzer } from "./src/analyzers/collection-analyzer";
 import { IndexAnalyzer } from "./src/analyzers/index-analyzer";
 import { QueryAnalyzer } from "./src/analyzers/query-analyzer";
 import { SchemaAnalyzer } from "./src/analyzers/schema-analyzer";
 import { StatsCollector } from "./src/collectors/stats-collector";
+import { loadConfig, resolveProfile } from "./src/config";
 import { InteractiveCLI } from "./src/interactive";
+import { DiffReporter } from "./src/reporters/diff-reporter";
 import { ReportGenerator } from "./src/reporters/report-generator";
 import type {
 	AnalysisReport,
@@ -12,8 +15,10 @@ import type {
 	CompactSummary,
 	CompactTarget,
 	DatabaseConfig,
+	FullReport,
 } from "./src/types";
 import { calculateHealthScore } from "./src/utils/health";
+import { runWatchLoop } from "./src/watch";
 
 class MongoDBAnalyzer {
 	private client: MongoClient;
@@ -38,6 +43,7 @@ class MongoDBAnalyzer {
 		this.statsCollector = new StatsCollector(client, db, options);
 		this.reportGenerator = new ReportGenerator(
 			options.outputDir ?? "./reports",
+			options,
 		);
 	}
 
@@ -148,13 +154,16 @@ class MongoDBAnalyzer {
 			}
 		}
 
-		const health = calculateHealthScore({
-			metrics,
-			unusedIndexesCount: unusedIndexes.length,
-			missingIndexesCount: missingIndexes.length,
-			slowQueriesCount: slowQueries.length,
-			fragmentedCollectionsCount: fragmentedCollections.length,
-		});
+		const health = calculateHealthScore(
+			{
+				metrics,
+				unusedIndexesCount: unusedIndexes.length,
+				missingIndexesCount: missingIndexes.length,
+				slowQueriesCount: slowQueries.length,
+				fragmentedCollectionsCount: fragmentedCollections.length,
+			},
+			this.options.thresholds,
+		);
 
 		const errors = [
 			...this.indexAnalyzer.getErrors(),
@@ -191,17 +200,24 @@ class MongoDBAnalyzer {
 		return report;
 	}
 
-	async generateReport(report: AnalysisReport): Promise<{
+	async generateReport(
+		report: AnalysisReport,
+		options: { html?: boolean } = {},
+	): Promise<{
 		markdown: string;
 		json: string;
+		html?: string;
 	}> {
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-		const [markdown, json] = await Promise.all([
+		const [markdown, json, html] = await Promise.all([
 			this.reportGenerator.generateFullReport(report, timestamp),
 			this.reportGenerator.generateJsonReport(report, timestamp),
+			options.html
+				? this.reportGenerator.generateHtmlReport(report, timestamp)
+				: Promise.resolve(undefined),
 		]);
 
-		return { markdown, json };
+		return { markdown, json, html };
 	}
 
 	printSummary(report: AnalysisReport): void {
@@ -222,6 +238,14 @@ class MongoDBAnalyzer {
 
 	async getBlockingOperations() {
 		return this.queryAnalyzer.getBlockingOperations();
+	}
+
+	async getSlowQueries() {
+		return this.queryAnalyzer.getSlowQueries();
+	}
+
+	async getCollectionStats() {
+		return this.collectionAnalyzer.getCollectionStats();
 	}
 
 	async getCurrentOperations() {
@@ -325,6 +349,40 @@ class MongoDBAnalyzer {
 	async checkProfilerEnabled(): Promise<{ level: number; slowMs: number }> {
 		return this.queryAnalyzer.checkProfilerEnabled();
 	}
+
+	async getHealthSnapshot(): Promise<{
+		healthScore: number;
+		metrics: AnalysisReport["metrics"];
+		issues: string[];
+		recommendations: string[];
+	}> {
+		const [metrics, unusedIndexes, missingIndexes, slowQueries, fragmented] =
+			await Promise.all([
+				this.statsCollector.getDatabaseMetrics(),
+				this.indexAnalyzer.getUnusedIndexes(),
+				this.indexAnalyzer.getMissingIndexes(),
+				this.queryAnalyzer.getSlowQueries(),
+				this.collectionAnalyzer.getFragmentedCollections(),
+			]);
+
+		const health = calculateHealthScore(
+			{
+				metrics,
+				unusedIndexesCount: unusedIndexes.length,
+				missingIndexesCount: missingIndexes.length,
+				slowQueriesCount: slowQueries.length,
+				fragmentedCollectionsCount: fragmented.length,
+			},
+			this.options.thresholds,
+		);
+
+		return {
+			healthScore: health.score,
+			metrics,
+			issues: health.issues,
+			recommendations: health.issues,
+		};
+	}
 }
 
 function buildConnectionUri(config: DatabaseConfig): string {
@@ -387,6 +445,12 @@ async function main() {
 		quiet?: boolean;
 		command?: string;
 		interactive?: boolean;
+		profile?: string;
+		configPath?: string;
+		collections?: string;
+		compare?: string;
+		html?: boolean;
+		watch?: boolean | string;
 	} = {};
 
 	for (let i = 0; i < args.length; i++) {
@@ -421,6 +485,31 @@ async function main() {
 			case "-o":
 				options.output = args[++i];
 				break;
+			case "--profile":
+				options.profile = args[++i];
+				break;
+			case "--config":
+				options.configPath = args[++i];
+				break;
+			case "--collections":
+				options.collections = args[++i];
+				break;
+			case "--compare":
+				options.compare = args[++i];
+				break;
+			case "--html":
+				options.html = true;
+				break;
+			case "--watch": {
+				const nextValue = args[i + 1];
+				if (nextValue && !nextValue.startsWith("-")) {
+					options.watch = nextValue;
+					i++;
+				} else {
+					options.watch = true;
+				}
+				break;
+			}
 			case "--slow-query-threshold":
 				options.slowQueryThreshold = Number.parseInt(args[++i], 10);
 				break;
@@ -455,182 +544,293 @@ async function main() {
 		process.exit(0);
 	}
 
-	// Support MONGODB_CONNECTION_STRING as primary connection method
-	const connectionString = process.env.MONGODB_CONNECTION_STRING;
-	const legacyUri = options.uri ?? process.env.MONGO_URI;
+	try {
+		const configFile = loadConfig(options.configPath);
+		const profile = resolveProfile(configFile, options.profile);
+		const preferProfile = Boolean(options.profile);
+		const watchInterval = parseWatchInterval(options.watch);
+		if (watchInterval !== undefined && options.json) {
+			throw new Error("--watch cannot be combined with --json.");
+		}
 
-	let uri: string | undefined;
-	let database: string;
+		const envConnectionString =
+			process.env.MONGODB_CONNECTION_STRING ?? process.env.MONGO_URI;
+		const envPort = process.env.MONGO_PORT;
+		const connectionString = resolveValue(
+			options.uri,
+			envConnectionString,
+			profile.uri,
+			undefined,
+			preferProfile,
+		);
 
-	if (connectionString) {
-		uri = connectionString;
-		database =
-			options.database ??
-			parseDatabaseFromConnectionString(connectionString) ??
-			process.env.MONGO_DB ??
-			"test";
-	} else if (legacyUri) {
-		uri = legacyUri;
-		database =
-			options.database ??
-			parseDatabaseFromConnectionString(legacyUri) ??
-			process.env.MONGO_DB ??
-			"test";
-	} else {
-		database = options.database ?? process.env.MONGO_DB ?? "test";
-	}
+		const database = resolveValue(
+			options.database,
+			process.env.MONGO_DB,
+			profile.database,
+			parseDatabaseFromConnectionString(connectionString ?? "") ?? "test",
+			preferProfile,
+		);
 
-	const config: DatabaseConfig = {
-		uri,
-		host: options.host ?? process.env.MONGO_HOST ?? "localhost",
-		port:
-			options.port ?? Number.parseInt(process.env.MONGO_PORT ?? "27017", 10),
-		database,
-		user: options.user ?? process.env.MONGO_USER,
-		password: options.password ?? process.env.MONGO_PASSWORD,
-		authSource: options.authSource ?? process.env.MONGO_AUTH_DB ?? "admin",
-	};
+		const config: DatabaseConfig = {
+			uri: connectionString,
+			host: resolveValue(
+				options.host,
+				process.env.MONGO_HOST,
+				profile.host,
+				"localhost",
+				preferProfile,
+			),
+			port: resolveValue(
+				options.port,
+				envPort ? Number.parseInt(envPort, 10) : undefined,
+				profile.port,
+				27017,
+				preferProfile,
+			),
+			database,
+			user: resolveValue(
+				options.user,
+				process.env.MONGO_USER,
+				profile.user,
+				undefined,
+				preferProfile,
+			),
+			password: resolveValue(
+				options.password,
+				process.env.MONGO_PASSWORD,
+				profile.password,
+				undefined,
+				preferProfile,
+			),
+			authSource: resolveValue(
+				options.authSource,
+				process.env.MONGO_AUTH_DB,
+				profile.authSource,
+				"admin",
+				preferProfile,
+			),
+		};
 
-	const analyzerOptions: AnalyzerOptions = {
-		slowQueryThresholdMs: options.slowQueryThreshold ?? 100,
-		minIndexAccesses: options.minIndexAccesses ?? 50,
-		topQueriesLimit: 50,
-		outputDir: options.output ?? "./reports",
-	};
+		const analyzerOptions: AnalyzerOptions = {
+			slowQueryThresholdMs:
+				options.slowQueryThreshold ?? configFile.slowQueryThreshold ?? 100,
+			minIndexAccesses:
+				options.minIndexAccesses ?? configFile.minIndexAccesses ?? 50,
+			topQueriesLimit: 50,
+			outputDir: options.output ?? configFile.output ?? "./reports",
+			collections: parseListOption(options.collections),
+			thresholds: configFile.thresholds,
+		};
 
-	if (options.interactive) {
-		const uri = config.uri ?? buildConnectionUri(config);
-		const client = new MongoClient(uri, {
-			connectTimeoutMS: config.connectTimeoutMs ?? 10_000,
-			socketTimeoutMS: config.socketTimeoutMs ?? 30_000,
-			serverSelectionTimeoutMS: config.connectTimeoutMs ?? 10_000,
-		});
+		if (options.interactive) {
+			const uri = config.uri ?? buildConnectionUri(config);
+			const client = new MongoClient(uri, {
+				connectTimeoutMS: config.connectTimeoutMs ?? 10_000,
+				socketTimeoutMS: config.socketTimeoutMs ?? 30_000,
+				serverSelectionTimeoutMS: config.connectTimeoutMs ?? 10_000,
+			});
+
+			try {
+				await client.connect();
+				const db = client.db(config.database);
+				const interactive = new InteractiveCLI(client, db, analyzerOptions);
+				await interactive.start();
+			} finally {
+				await client.close();
+			}
+			return;
+		}
+
+		const log = options.quiet || options.json ? () => {} : console.log;
+		analyzerOptions.log = log;
+
+		if (config.uri) {
+			const safeUri = config.uri.replace(/:\/\/[^@]+@/, "://***@");
+			log(`\nConnecting to MongoDB: ${safeUri}`);
+		} else {
+			log(
+				`\nConnecting to MongoDB at ${config.host}:${config.port}/${config.database}...`,
+			);
+		}
+
+		const analyzer = await MongoDBAnalyzer.connect(config, analyzerOptions);
 
 		try {
-			await client.connect();
-			const db = client.db(config.database);
-			const interactive = new InteractiveCLI(client, db, analyzerOptions);
-			await interactive.start();
+			if (watchInterval !== undefined) {
+				await runWatchLoop({
+					intervalSeconds: watchInterval,
+					command: options.command ?? "full",
+					runCommand: () => executeAnalyzerCommand(analyzer, options, log),
+				});
+				return;
+			}
+
+			await executeAnalyzerCommand(analyzer, options, log);
 		} finally {
-			await client.close();
+			await analyzer.close();
 		}
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (options.json) {
+			console.log(JSON.stringify({ success: false, error: message }));
+		} else if (message.startsWith("Mongo")) {
+			console.error("Connection failed:", message);
+		} else {
+			console.error("Error during analysis:", message);
+		}
+		process.exitCode = 1;
+	}
+}
+
+async function executeAnalyzerCommand(
+	analyzer: MongoDBAnalyzer,
+	options: {
+		json?: boolean;
+		command?: string;
+		compare?: string;
+		html?: boolean;
+	},
+	log: (...args: unknown[]) => void,
+): Promise<void> {
+	if (options.command && options.command !== "full") {
+		const result = await runCommand(analyzer, options.command, log);
+		console.log(JSON.stringify(result, null, 2));
 		return;
 	}
 
-	const log = options.quiet || options.json ? () => {} : console.log;
+	const report = await analyzer.analyze();
 
-	// Pass log function to analyzer so analyze() respects --json/--quiet
-	analyzerOptions.log = log;
-
-	// Log connection info (hide credentials)
-	if (config.uri) {
-		const safeUri = config.uri.replace(/:\/\/[^@]+@/, "://***@");
-		log(`\nConnecting to MongoDB: ${safeUri}`);
-	} else {
-		log(
-			`\nConnecting to MongoDB at ${config.host}:${config.port}/${config.database}...`,
+	if (options.compare) {
+		const previous = loadPreviousReport(options.compare);
+		DiffReporter.print(
+			DiffReporter.diff(report, previous),
+			options.json ? console.error : console.log,
 		);
 	}
 
-	let analyzer: MongoDBAnalyzer;
-	try {
-		analyzer = await MongoDBAnalyzer.connect(config, analyzerOptions);
-	} catch (error) {
-		if (options.json) {
-			console.log(
-				JSON.stringify({
-					success: false,
-					error: `Connection failed: ${error}`,
-				}),
-			);
-		} else {
-			console.error("Connection failed:", error);
-		}
-		process.exitCode = 1;
+	if (options.json) {
+		const output = {
+			success: true,
+			report,
+			summary: {
+				healthScore: report.healthScore,
+				databaseSize: report.metrics.databaseSize,
+				cacheHitRatio: report.metrics.cacheHitRatio,
+				unusedIndexesCount: report.unusedIndexes.length,
+				missingIndexesCount: report.missingIndexes.length,
+				duplicateIndexesCount: report.duplicateIndexes.length,
+				slowQueriesCount: report.slowQueries.length,
+				fragmentedCollectionsCount: report.fragmentedCollections.length,
+			},
+			recommendations: report.recommendations,
+		};
+		console.log(JSON.stringify(output, null, 2));
 		return;
 	}
 
-	// Graceful shutdown handler
-	const shutdown = async () => {
-		await analyzer.close();
-		process.exit(130);
-	};
-	process.on("SIGINT", shutdown);
-	process.on("SIGTERM", shutdown);
+	analyzer.printSummary(report);
+
+	log("\nGenerating reports...");
+	const { markdown, json, html } = await analyzer.generateReport(report, {
+		html: options.html,
+	});
+
+	log("\nReports generated:");
+	log(`  - Markdown: ${markdown}`);
+	log(`  - JSON: ${json}`);
+	if (html) {
+		log(`  - HTML: ${html}`);
+	}
+
+	log("\n--- Additional Information ---\n");
+
+	const longRunning = await analyzer.getLongRunningQueries();
+	if (longRunning.length > 0) {
+		log(`Long running queries: ${longRunning.length}`);
+		for (const query of longRunning.slice(0, 3)) {
+			log(
+				`  - OpId ${query.opId}: ${query.runningTimeFormatted} - ${query.operation} on ${query.namespace}`,
+			);
+		}
+	}
+
+	const blocking = await analyzer.getBlockingOperations();
+	if (blocking.length > 0) {
+		log(`\nBlocking operations detected: ${blocking.length}`);
+		for (const operation of blocking) {
+			log(`  - OpId ${operation.blockedOpId} waiting for lock`);
+		}
+	}
+
+	log("\nAnalysis complete!");
+}
+
+function loadPreviousReport(comparePath: string): FullReport {
+	if (!existsSync(comparePath)) {
+		throw new Error(`Compare report not found: ${comparePath}`);
+	}
 
 	try {
-		if (options.command) {
-			const result = await runCommand(analyzer, options.command, log);
-			console.log(JSON.stringify(result, null, 2));
-			return;
+		const parsed = JSON.parse(readFileSync(comparePath, "utf-8")) as unknown;
+		if (
+			typeof parsed === "object" &&
+			parsed !== null &&
+			"report" in parsed &&
+			parsed.report
+		) {
+			return parsed.report as FullReport;
 		}
 
-		const report = await analyzer.analyze();
-
-		if (options.json) {
-			const output = {
-				success: true,
-				report,
-				summary: {
-					healthScore: report.healthScore,
-					databaseSize: report.metrics.databaseSize,
-					cacheHitRatio: report.metrics.cacheHitRatio,
-					unusedIndexesCount: report.unusedIndexes.length,
-					missingIndexesCount: report.missingIndexes.length,
-					duplicateIndexesCount: report.duplicateIndexes.length,
-					slowQueriesCount: report.slowQueries.length,
-					fragmentedCollectionsCount: report.fragmentedCollections.length,
-				},
-				recommendations: report.recommendations,
-			};
-			console.log(JSON.stringify(output, null, 2));
-			return;
-		}
-
-		analyzer.printSummary(report);
-
-		log("\nGenerating reports...");
-		const { markdown, json } = await analyzer.generateReport(report);
-
-		log(`\nReports generated:`);
-		log(`  - Markdown: ${markdown}`);
-		log(`  - JSON: ${json}`);
-
-		log("\n--- Additional Information ---\n");
-
-		// Long running queries
-		const longRunning = await analyzer.getLongRunningQueries();
-		if (longRunning.length > 0) {
-			log(`Long running queries: ${longRunning.length}`);
-			for (const q of longRunning.slice(0, 3)) {
-				log(
-					`  - OpId ${q.opId}: ${q.runningTimeFormatted} - ${q.operation} on ${q.namespace}`,
-				);
-			}
-		}
-
-		// Blocking operations
-		const blocking = await analyzer.getBlockingOperations();
-		if (blocking.length > 0) {
-			log(`\nBlocking operations detected: ${blocking.length}`);
-			for (const b of blocking) {
-				log(`  - OpId ${b.blockedOpId} waiting for lock`);
-			}
-		}
-
-		log("\nAnalysis complete!");
+		return parsed as FullReport;
 	} catch (error) {
-		if (options.json) {
-			console.log(JSON.stringify({ success: false, error: String(error) }));
-		} else {
-			console.error("Error during analysis:", error);
-		}
-		process.exitCode = 1;
-	} finally {
-		process.off("SIGINT", shutdown);
-		process.off("SIGTERM", shutdown);
-		await analyzer.close();
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(
+			`Could not parse compare report at ${comparePath}: ${message}`,
+		);
 	}
+}
+
+function parseListOption(value?: string): string[] | undefined {
+	const entries = value
+		?.split(",")
+		.map((entry) => entry.trim())
+		.filter(Boolean);
+
+	return entries && entries.length > 0 ? entries : undefined;
+}
+
+function resolveValue<T>(
+	cliValue: T | undefined,
+	envValue: T | undefined,
+	profileValue: T | undefined,
+	fallbackValue: T,
+	preferProfile: boolean,
+): T {
+	if (cliValue !== undefined) {
+		return cliValue;
+	}
+
+	if (preferProfile) {
+		return profileValue ?? envValue ?? fallbackValue;
+	}
+
+	return envValue ?? profileValue ?? fallbackValue;
+}
+
+function parseWatchInterval(watch?: boolean | string): number | undefined {
+	if (watch === undefined) {
+		return undefined;
+	}
+
+	const intervalSeconds =
+		watch === true ? 30 : Number.parseInt(String(watch), 10);
+
+	if (!Number.isFinite(intervalSeconds) || intervalSeconds <= 0) {
+		throw new Error(`Invalid watch interval: ${watch}`);
+	}
+
+	return intervalSeconds;
 }
 
 async function runCommand(
@@ -649,6 +849,8 @@ async function runCommand(
 		}
 
 		case "slow-queries":
+			return { slowQueries: await analyzer.getSlowQueries() };
+
 		case "query-stats": {
 			const queryStats = await analyzer.getAllQueryStats(5, 50);
 			return {
@@ -689,6 +891,8 @@ async function runCommand(
 			return { blockingOperations: await analyzer.getBlockingOperations() };
 
 		case "collections":
+			return { collections: await analyzer.getCollectionStats() };
+
 		case "largest-collections":
 			return { largestCollections: await analyzer.getLargestCollections() };
 
@@ -722,11 +926,11 @@ async function runCommand(
 			return { oplogStats: await analyzer.getOplogStats() };
 
 		case "health": {
-			const healthReport = await analyzer.analyze();
+			const healthReport = await analyzer.getHealthSnapshot();
 			return {
 				healthScore: healthReport.healthScore,
 				metrics: healthReport.metrics,
-				issues: healthReport.recommendations,
+				issues: healthReport.issues,
 			};
 		}
 
@@ -790,6 +994,8 @@ Connection Options:
   -U, --user <user>        Database user (env: MONGO_USER)
   -W, --password <pass>    Database password (env: MONGO_PASSWORD)
   --authSource <db>        Authentication database (env: MONGO_AUTH_DB)
+  --profile <name>         Use named profile from .analyzerrc.json
+  --config <path>          Use a custom config file path
 
 Environment Variables (in priority order):
   MONGODB_CONNECTION_STRING  Full connection string (recommended)
@@ -800,10 +1006,14 @@ Environment Variables (in priority order):
 Analysis Options:
   --slow-query-threshold <ms>  Slow query threshold in ms (default: 100)
   --min-index-accesses <n>     Min accesses to consider index "used" (default: 50)
+  --collections <list>         Comma-separated collections to analyze
+  --compare <path>             Compare against a previous JSON report
+  --watch [seconds]            Watch mode (default interval: 30s)
 
 Output Options:
   -o, --output <dir>       Output directory for reports (default: ./reports)
   -j, --json               Output JSON to stdout (for AI/programmatic use)
+  --html                   Also generate an HTML report
   -q, --quiet              Suppress non-essential output
   -i, --interactive        Interactive mode with menu
   start                    Alias for --interactive
@@ -859,6 +1069,15 @@ Examples:
 
   # Enable profiler
   npx ts-node index.ts -c enable-profiler
+
+  # Generate HTML output
+  npx ts-node index.ts --html -c full
+
+  # Compare with a previous JSON snapshot
+  npx ts-node index.ts --compare ./reports/mongodb-analysis-previous.json
+
+  # Watch health output
+  npx ts-node index.ts -c health --watch 10
 
 AI Integration:
   Use --json flag for structured output that AI can parse.

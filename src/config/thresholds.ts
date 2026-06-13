@@ -1,3 +1,5 @@
+import type { ThresholdOverrides } from "../types";
+
 /**
  * Configurable thresholds for MongoDB analysis
  * All thresholds can be overridden via AnalyzerOptions
@@ -132,6 +134,24 @@ export const THRESHOLDS = {
 	},
 } as const;
 
+export function getThresholds(overrides?: ThresholdOverrides) {
+	return {
+		...THRESHOLDS,
+		fragmentation: {
+			...THRESHOLDS.fragmentation,
+			...overrides?.fragmentation,
+		},
+		cache: {
+			...THRESHOLDS.cache,
+			...overrides?.cache,
+		},
+		queries: {
+			...THRESHOLDS.queries,
+			...overrides?.queries,
+		},
+	};
+}
+
 /**
  * Severity levels for recommendations
  */
@@ -140,30 +160,39 @@ export type Severity = "critical" | "high" | "medium" | "low";
 /**
  * Get severity based on fragmentation ratio
  */
-export function getFragmentationSeverity(ratio: number): Severity {
-	if (ratio >= THRESHOLDS.fragmentation.critical) return "critical";
-	if (ratio >= THRESHOLDS.fragmentation.high) return "high";
-	if (ratio >= THRESHOLDS.fragmentation.moderate) return "medium";
+export function getFragmentationSeverity(
+	ratio: number,
+	thresholds = getThresholds(),
+): Severity {
+	if (ratio >= thresholds.fragmentation.critical) return "critical";
+	if (ratio >= thresholds.fragmentation.high) return "high";
+	if (ratio >= thresholds.fragmentation.moderate) return "medium";
 	return "low";
 }
 
 /**
  * Get severity based on cache hit ratio
  */
-export function getCacheHitSeverity(ratio: number): Severity {
-	if (ratio < THRESHOLDS.cache.poor) return "critical";
-	if (ratio < THRESHOLDS.cache.acceptable) return "high";
-	if (ratio < THRESHOLDS.cache.optimal) return "medium";
+export function getCacheHitSeverity(
+	ratio: number,
+	thresholds = getThresholds(),
+): Severity {
+	if (ratio < thresholds.cache.poor) return "critical";
+	if (ratio < thresholds.cache.acceptable) return "high";
+	if (ratio < thresholds.cache.optimal) return "medium";
 	return "low";
 }
 
 /**
  * Get severity based on query execution time
  */
-export function getQueryTimeSeverity(ms: number): Severity {
-	if (ms >= THRESHOLDS.queries.criticalMs) return "critical";
-	if (ms >= THRESHOLDS.queries.verySlowMs) return "high";
-	if (ms >= THRESHOLDS.queries.slowMs) return "medium";
+export function getQueryTimeSeverity(
+	ms: number,
+	thresholds = getThresholds(),
+): Severity {
+	if (ms >= thresholds.queries.criticalMs) return "critical";
+	if (ms >= thresholds.queries.verySlowMs) return "high";
+	if (ms >= thresholds.queries.slowMs) return "medium";
 	return "low";
 }
 

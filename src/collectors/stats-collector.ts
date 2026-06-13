@@ -17,6 +17,7 @@ import type {
 	TTLIndexInfo,
 	WiredTigerStats,
 } from "../types";
+import { filterCollectionNames } from "../utils/collection-filters";
 import { ErrorCollector } from "../utils/errors";
 import { formatBytes } from "../utils/formatting";
 
@@ -26,7 +27,7 @@ export class StatsCollector {
 	constructor(
 		private client: MongoClient,
 		private db: Db,
-		_options: AnalyzerOptions = {},
+		private options: AnalyzerOptions = {},
 	) {}
 
 	async getDatabaseMetrics(): Promise<DatabaseMetrics> {
@@ -450,14 +451,17 @@ export class StatsCollector {
 		const ttlIndexes: TTLIndexInfo[] = [];
 
 		try {
-			const collections = await this.db.listCollections().toArray();
+			const collections = filterCollectionNames(
+				(await this.db.listCollections().toArray())
+					.map((collection) => collection.name)
+					.filter((name) => !name.startsWith("system.")),
+				this.options.collections,
+			);
 
-			for (const coll of collections) {
-				if (coll.name.startsWith("system.")) continue;
-
+			for (const collectionName of collections) {
 				try {
 					const indexes = await this.db
-						.collection(coll.name)
+						.collection(collectionName)
 						.listIndexes()
 						.toArray();
 
@@ -478,7 +482,7 @@ export class StatsCollector {
 							}
 
 							ttlIndexes.push({
-								collection: coll.name,
+								collection: collectionName,
 								indexName: idx.name,
 								field,
 								expireAfterSeconds: seconds,

@@ -16,6 +16,32 @@ export interface DatabaseConfig {
 	socketTimeoutMs?: number;
 }
 
+export interface FragmentationThresholdOverrides {
+	minor?: number;
+	moderate?: number;
+	high?: number;
+	critical?: number;
+}
+
+export interface CacheThresholdOverrides {
+	excellent?: number;
+	optimal?: number;
+	acceptable?: number;
+	poor?: number;
+}
+
+export interface QueryThresholdOverrides {
+	slowMs?: number;
+	verySlowMs?: number;
+	criticalMs?: number;
+}
+
+export interface ThresholdOverrides {
+	fragmentation?: FragmentationThresholdOverrides;
+	cache?: CacheThresholdOverrides;
+	queries?: QueryThresholdOverrides;
+}
+
 // ============================================
 // Index Types
 // ============================================
@@ -440,6 +466,8 @@ export interface AnalysisReport {
 	connectionStats?: ConnectionStats;
 }
 
+export type FullReport = AnalysisReport;
+
 export interface AnalysisErrorInfo {
 	type: string;
 	severity?: "fatal" | "warning" | "info";
@@ -466,12 +494,16 @@ export interface AnalyzerOptions {
 	excludeCollections?: string[];
 	/** Output directory for reports */
 	outputDir?: string;
+	/** Collections to include in analysis */
+	collections?: string[];
 	/** Sample size for schema analysis */
 	schemaSampleSize?: number;
 	/** Enable verbose logging */
 	verbose?: boolean;
 	/** Log function for progress messages (defaults to console.log, use no-op for quiet/json mode) */
 	log?: (...args: unknown[]) => void;
+	/** Threshold overrides resolved from config */
+	thresholds?: ThresholdOverrides;
 }
 
 // ============================================

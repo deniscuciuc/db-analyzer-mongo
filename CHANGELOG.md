@@ -27,3 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependabot configuration for npm + GitHub Actions
 - MIT license
 - Makefile with common development targets
+- Config-file support via `.analyzerrc.json`, global fallback config, and named connection profiles
+- Collection filters for scoped MongoDB analysis runs
+- Self-contained HTML report generation with light/dark mode and sortable sections
+- Report diffing against previous JSON snapshots with delta summaries
+- Watch mode for polling-safe commands with refresh intervals and countdown feedback
+- `pnpm analyze:html` and `pnpm analyze:watch` convenience scripts
+
+### Changed
+
+- Full analysis output can now generate Markdown, JSON, and optional HTML reports from the same run
+- CLI compare mode accepts saved JSON reports and wrapped CLI JSON output when diffing snapshots
+- `slow-queries`, `collections`, and filtered TTL reporting now align with the selected analysis scope
+
+### Fixed
+
+- Explicit `--profile` selection now overrides sourced environment connection defaults for the active run

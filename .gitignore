@@ -2,6 +2,7 @@ node_modules/
 .pnpm-store/
 dist/
 .env
+.analyzerrc.json
 *.log
 reports/*.md
 reports/*.json

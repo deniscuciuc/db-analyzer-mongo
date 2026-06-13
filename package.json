@@ -25,6 +25,8 @@
     "analyze:health": "node --env-file=.env -r ts-node/register index.ts -j -c health",
     "analyze:indexes": "node --env-file=.env -r ts-node/register index.ts -j -c unused-indexes",
     "analyze:queries": "node --env-file=.env -r ts-node/register index.ts -j -c slow-queries",
+    "analyze:html": "node --env-file=.env -r ts-node/register index.ts --html -c full",
+    "analyze:watch": "node --env-file=.env -r ts-node/register index.ts -c health --watch 30",
     "compact": "node --env-file=.env -r ts-node/register index.ts -c run-compact",
     "compact:check": "node --env-file=.env -r ts-node/register index.ts -j -c compact-needed",
     "profiler:enable": "node --env-file=.env -r ts-node/register index.ts -j -c enable-profiler",

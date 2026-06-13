@@ -6,6 +6,7 @@ import type {
 	SchemaAnalysis,
 	SchemaIssue,
 } from "../types";
+import { filterCollectionNames } from "../utils/collection-filters";
 import { ErrorCollector } from "../utils/errors";
 import { formatBytes } from "../utils/formatting";
 
@@ -551,12 +552,15 @@ export class SchemaAnalyzer {
 		const excludeCollections = this.options.excludeCollections ?? [];
 		const includeSystem = this.options.includeSystemCollections ?? false;
 
-		return collections
-			.map((c) => c.name)
-			.filter((name) => {
-				if (excludeCollections.includes(name)) return false;
-				if (!includeSystem && name.startsWith("system.")) return false;
-				return true;
-			});
+		return filterCollectionNames(
+			collections
+				.map((c) => c.name)
+				.filter((name) => {
+					if (excludeCollections.includes(name)) return false;
+					if (!includeSystem && name.startsWith("system.")) return false;
+					return true;
+				}),
+			this.options.collections,
+		);
 	}
 }
