@@ -1,12 +1,29 @@
 # MongoDB Analyzer
 
 [![Node.js 20+](https://img.shields.io/badge/node-20%2B-339933?logo=node.js)](https://nodejs.org/)
+[![npm version](https://img.shields.io/npm/v/@deniscuciuc/mongo-analyzer?logo=npm&color=cb3837)](https://www.npmjs.com/package/@deniscuciuc/mongo-analyzer)
+[![npm downloads](https://img.shields.io/npm/dm/@deniscuciuc/mongo-analyzer)](https://www.npmjs.com/package/@deniscuciuc/mongo-analyzer)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/types-TypeScript-3178C6?logo=typescript)](https://www.typescriptlang.org/)
-[![Biome](https://img.shields.io/badge/code_style-Biome-60a5fa?logo=biome)](https://biomejs.dev/)
-[![pnpm](https://img.shields.io/badge/package_manager-pnpm-F69220?logo=pnpm)](https://pnpm.io/)
+[![CI](https://github.com/deniscuciuc/db-analyzer-mongo/actions/workflows/ci.yml/badge.svg)](https://github.com/deniscuciuc/db-analyzer-mongo/actions/workflows/ci.yml)
 
 A CLI tool that analyzes MongoDB databases for performance issues: index usage, slow queries, schema problems, fragmentation, replica-set health, and operational metrics. Outputs structured JSON for automation or rich Markdown reports for humans.
+
+## Quick start
+
+No installation required:
+
+```bash
+npx @deniscuciuc/mongo-analyzer --uri "mongodb://localhost:27017" -d mydb -c health
+npx @deniscuciuc/mongo-analyzer --uri "mongodb://localhost:27017" -d mydb -c full --json > report.json
+```
+
+Or install globally:
+
+```bash
+npm install -g @deniscuciuc/mongo-analyzer
+mongo-analyzer --uri "mongodb://localhost:27017" -d mydb -c health
+```
 
 > **Working with an AI agent?** See [.github/copilot-instructions.md](.github/copilot-instructions.md) for the integrated GitHub Copilot agent workflow and JSON contracts.
 
@@ -16,7 +33,8 @@ A CLI tool that analyzes MongoDB databases for performance issues: index usage, 
 
 - [Features](#features)
 - [Requirements](#requirements)
-- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Development / local setup](#development--local-setup)
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [Commands](#commands)
@@ -26,6 +44,7 @@ A CLI tool that analyzes MongoDB databases for performance issues: index usage, 
 - [Programmatic usage](#programmatic-usage)
 - [Troubleshooting](#troubleshooting)
 - [Architecture](#architecture)
+- [Contributing](#contributing)
 
 ---
 
@@ -83,7 +102,7 @@ A CLI tool that analyzes MongoDB databases for performance issues: index usage, 
 - pnpm >= 10
 - MongoDB 4.4+
 
-## Installation
+## Development / local setup
 
 ```bash
 pnpm install
@@ -349,7 +368,7 @@ Output:
 ## Programmatic usage
 
 ```ts
-import { MongoDBAnalyzer } from "@deniscuciuc/db-analyzer-mongo";
+import { MongoDBAnalyzer } from "@deniscuciuc/mongo-analyzer";
 
 const analyzer = await MongoDBAnalyzer.connect({
   uri: process.env.MONGODB_CONNECTION_STRING!,
@@ -410,18 +429,8 @@ db-analyzer-mongo/
 
 ## Contributing
 
-Contributions are welcome! Here's how to get started:
-
-1. Fork the repo and create a feature branch
-2. Run `pnpm install` to install dependencies
-3. Copy `.env.example` to `.env` and configure your connection
-4. Make your changes and ensure `pnpm lint` passes
-5. Open a pull request
-
-**Coding standards:**
-- TypeScript with strict mode enabled
-- Code formatted with Biome (tab indent, 2-space width)
-- All changes must pass `pnpm lint` and `pnpm build`
+Bug reports, feature requests, and pull requests are welcome.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions and guidelines.
 
 ## License
 

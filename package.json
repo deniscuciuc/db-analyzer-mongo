@@ -1,23 +1,45 @@
 {
-  "name": "@deniscuciuc/db-analyzer-mongo",
+  "name": "@deniscuciuc/mongo-analyzer",
   "version": "1.0.0",
-  "description": "MongoDB Database Analyzer - tool for analyzing MongoDB databases to identify performance issues",
+  "description": "CLI tool that analyzes MongoDB databases - index usage, slow queries, schema issues, fragmentation and replica-set health.",
   "keywords": [
     "mongodb",
+    "mongo",
     "database",
     "analyzer",
     "performance",
-    "optimization",
-    "indexes"
+    "cli",
+    "indexes",
+    "atlas",
+    "replica-set",
+    "schema"
   ],
   "repository": {
     "type": "git",
-    "url": "git@github.com:deniscuciuc/db-analyzer-mongo.git"
+    "url": "git+https://github.com/deniscuciuc/db-analyzer-mongo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/deniscuciuc/db-analyzer-mongo/issues"
   },
   "license": "MIT",
-  "author": "Denis Cuciuc",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "author": "Denis Cuciuc <denis@deniscuciuc.dev>",
+  "homepage": "https://github.com/deniscuciuc/db-analyzer-mongo#readme",
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "mongo-analyzer": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "analyzerrc.example.json"
+  ],
   "scripts": {
     "start": "node --env-file=.env -r ts-node/register index.ts start",
     "analyze": "node --env-file=.env -r ts-node/register index.ts",
@@ -31,9 +53,14 @@
     "compact:check": "node --env-file=.env -r ts-node/register index.ts -j -c compact-needed",
     "profiler:enable": "node --env-file=.env -r ts-node/register index.ts -j -c enable-profiler",
     "profiler:disable": "node --env-file=.env -r ts-node/register index.ts -j -c disable-profiler",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc",
+    "postbuild": "node scripts/add-shebang.js",
     "lint": "biome check .",
-    "lint:fix": "biome check --write ."
+    "lint:fix": "biome check --write .",
+    "prepublishOnly": "pnpm lint && pnpm build",
+    "release:patch": "npm version patch && git push && git push --tags",
+    "release:minor": "npm version minor && git push && git push --tags",
+    "release:major": "npm version major && git push && git push --tags"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.1.0",
@@ -46,7 +73,7 @@
     "typescript": "^5.9.3"
   },
   "engines": {
-    "node": ">=20.12.0",
+    "node": ">=20",
     "pnpm": ">=10"
   }
 }
