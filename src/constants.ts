@@ -59,6 +59,17 @@ export const WATCH_ALLOWED = new Set<Command>([
 	"oplog",
 ]);
 
+/**
+ * Commands that change server state. Running one non-interactively requires
+ * --yes; the interactive menus prompt for confirmation instead.
+ */
+export const DESTRUCTIVE_COMMANDS = new Set<Command>([
+	"run-compact",
+	"auto-compact",
+	"enable-profiler",
+	"disable-profiler",
+]);
+
 export const WATCH_BLOCKED = new Set<Command>([
 	"run-compact",
 	"auto-compact",

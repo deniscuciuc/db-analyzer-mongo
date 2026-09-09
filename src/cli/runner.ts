@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { Db, MongoClient } from "mongodb";
-
 import { CollectionAnalyzer } from "../analyzers/collection-analyzer";
 import { IndexAnalyzer } from "../analyzers/index-analyzer";
 import { QueryAnalyzer } from "../analyzers/query-analyzer";
@@ -389,6 +388,16 @@ async function runCommand(
 			return buildHealthSnapshot(client, db, analyzerOptions);
 		case "run-compact":
 		case "auto-compact": {
+			if (options.dryRun) {
+				const candidates =
+					await services.collections.getCollectionsNeedingCompact();
+				return {
+					dryRun: true,
+					collections: candidates,
+					message: `Would compact ${candidates.length} collection(s). Re-run with --yes to execute.`,
+				};
+			}
+
 			log("Running compact on collections that need it...\n");
 			const summary = await services.collections.autoCompact({
 				onProgress: (result, index, total) => {
@@ -405,13 +414,27 @@ async function runCommand(
 			};
 		}
 		case "enable-profiler":
-			return services.queries.enableProfiler(1, 100);
+			return options.dryRun
+				? {
+						dryRun: true,
+						message:
+							"Would enable the database profiler at level 1 (100ms). Re-run with --yes to execute.",
+					}
+				: services.queries.enableProfiler(1, 100);
 		case "disable-profiler":
-			return services.queries.disableProfiler();
+			return options.dryRun
+				? {
+						dryRun: true,
+						message:
+							"Would disable the database profiler. Re-run with --yes to execute.",
+					}
+				: services.queries.disableProfiler();
 		case "profiler-status":
 			return services.queries.checkProfilerEnabled();
-		default:
+		case "full":
 			return buildFullReport(client, db, analyzerOptions);
+		default:
+			throw new Error(`Unsupported command: ${options.command}`);
 	}
 }
 

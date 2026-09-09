@@ -22,6 +22,8 @@ export interface ParsedOptions extends AnalyzerOptions {
 	slowQueryThreshold: number;
 	minIndexAccesses: number;
 	interactive: boolean;
+	yes: boolean;
+	dryRun: boolean;
 }
 
 export function parseOptions(argv = process.argv.slice(2)): ParsedOptions {
@@ -38,6 +40,8 @@ export function parseOptions(argv = process.argv.slice(2)): ParsedOptions {
 		slowQueryThreshold: DEFAULTS.slowQueryThreshold,
 		minIndexAccesses: DEFAULTS.minIndexAccesses,
 		interactive: false,
+		yes: false,
+		dryRun: false,
 	};
 
 	for (let index = 0; index < argv.length; index++) {
@@ -83,6 +87,13 @@ export function parseOptions(argv = process.argv.slice(2)): ParsedOptions {
 				break;
 			case "--compare":
 				options.compare = argv[++index];
+				break;
+			case "--yes":
+			case "-y":
+				options.yes = true;
+				break;
+			case "--dry-run":
+				options.dryRun = true;
 				break;
 			case "--html":
 				options.html = true;
@@ -190,6 +201,10 @@ Output options:
   -q, --quiet                    Suppress non-essential output
   -i, --interactive              Interactive mode with menu
   start                          Alias for --interactive
+
+Safety options:
+  -y, --yes                      Confirm destructive commands (compact, profiler changes)
+  --dry-run                      Report what a destructive command would do, without running it
 
 Commands:
   -c, --command <cmd>            Run a specific analysis command

@@ -2,6 +2,10 @@ import { type Db, MongoClient } from "mongodb";
 
 import { parseOptions } from "./src/cli/options";
 import { executeCommand } from "./src/cli/runner";
+import {
+	assertConfirmedIfDestructive,
+	assertKnownCommand,
+} from "./src/cli/validate";
 import { loadConfig, resolveProfile } from "./src/config/loader";
 import { DEFAULTS } from "./src/constants";
 import { InteractiveCLI } from "./src/interactive";
@@ -69,6 +73,11 @@ async function main(): Promise<void> {
 	if (options.watch !== undefined && options.json) {
 		throw new Error("--watch cannot be combined with --json.");
 	}
+
+	// Validate before opening a connection so a typo fails immediately rather
+	// than after a connection timeout.
+	assertKnownCommand(options.command);
+	assertConfirmedIfDestructive(options);
 
 	const envConnectionString =
 		process.env.MONGODB_CONNECTION_STRING ?? process.env.MONGO_URI;
@@ -159,12 +168,29 @@ async function main(): Promise<void> {
 		}),
 	);
 
-	await client.connect();
-	const db: Db = client.db(runtimeOptions.database);
+	// The driver emits 'error' on topology failures; without a listener those
+	// surface as unhandled error events, which is near-certain in watch mode.
+	client.on("error", (error: Error) => {
+		console.warn(`MongoDB connection error: ${error.message}`);
+	});
 
+	// connect() must be inside the try/finally: on failure the client may already
+	// have started topology monitors, and close() is what tears them down.
 	try {
+		try {
+			await client.connect();
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(`Cannot connect to MongoDB: ${message}`);
+		}
+
+		const db: Db = client.db(runtimeOptions.database);
+
 		if (runtimeOptions.interactive) {
-			const cli = new InteractiveCLI(client, db, runtimeOptions);
+			const cli = new InteractiveCLI(client, db, {
+				...runtimeOptions,
+				slowQueryThresholdMs: runtimeOptions.slowQueryThreshold,
+			});
 			await cli.start();
 			return;
 		}
@@ -186,10 +212,12 @@ async function main(): Promise<void> {
 
 main().catch((error) => {
 	const message = error instanceof Error ? error.message : String(error);
-	if (message.startsWith("Mongo")) {
+	if (message.startsWith("Cannot connect to MongoDB")) {
 		console.error("Connection failed:", message);
 	} else {
 		console.error("Error during analysis:", message);
 	}
-	process.exit(1);
+	// Set exitCode rather than calling process.exit, which can truncate buffered
+	// stdout — e.g. a large --json report being piped to a file.
+	process.exitCode = 1;
 });
