@@ -1,6 +1,6 @@
 {
   "name": "@deniscuciuc/mongo-analyzer",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "CLI tool that analyzes MongoDB databases - index usage, slow queries, schema issues, fragmentation and replica-set health.",
   "keywords": [
     "mongodb",
@@ -69,12 +69,12 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.11",
-    "@types/node": "^22.15.0",
+    "@types/node": "^22.19.7",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   },
   "engines": {
-    "node": ">=20.6",
+    "node": ">=22",
     "pnpm": ">=10"
   },
   "exports": {

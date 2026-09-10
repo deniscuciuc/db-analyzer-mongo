@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-10
+
+### Changed
+
+- **The minimum supported Node.js version is now 22.** Node 20 reached end of life on
+  30 April 2026. This also fixes a latent bug: `@inquirer/prompts` v8 is ESM-only, and
+  `require()` of an ES module only works from Node 20.19 onward — so interactive mode was
+  broken on Node 20.0 through 20.18, which the previous `>=20` range claimed to support.
+- TypeScript 7. It removes the legacy `node10` module resolution, so the projects moved to
+  `nodenext`, which is what correctly models Node 22+ being able to `require()` an ES
+  module. `@types/node` is pinned to the supported floor rather than the newest release, so
+  the compiler rejects APIs that would not exist at runtime.
+- Updated `ioredis` to 6, `mongodb` to 7, `pg`, `@inquirer/prompts` and `@biomejs/biome`,
+  and the GitHub Actions to their current majors. Each was verified against a real database
+  container, not just a green type-check.
+
 ## [1.1.0] - 2026-09-10
 
 ### Added

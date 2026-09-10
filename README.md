@@ -1,6 +1,6 @@
 # MongoDB Analyzer
 
-[![Node.js 20+](https://img.shields.io/badge/node-20%2B-339933?logo=node.js)](https://nodejs.org/)
+[![Node.js 22+](https://img.shields.io/badge/node-20%2B-339933?logo=node.js)](https://nodejs.org/)
 [![npm version](https://img.shields.io/npm/v/@deniscuciuc/mongo-analyzer?logo=npm&color=cb3837)](https://www.npmjs.com/package/@deniscuciuc/mongo-analyzer)
 [![npm downloads](https://img.shields.io/npm/dm/@deniscuciuc/mongo-analyzer)](https://www.npmjs.com/package/@deniscuciuc/mongo-analyzer)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -98,7 +98,7 @@ mongo-analyzer --uri "mongodb://localhost:27017" -d mydb -c health
 
 ## Requirements
 
-- Node.js >= 20.12.0
+- Node.js 22+.12.0
 - pnpm >= 10
 - MongoDB 4.4+
 

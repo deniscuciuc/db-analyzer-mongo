@@ -12,6 +12,12 @@ updates:
       time: "08:00"
       timezone: "Europe/Chisinau"
     open-pull-requests-limit: 10
+    ignore:
+      # @types/node tracks the minimum supported Node (see engines.node), not the newest
+      # release — otherwise the compiler would accept APIs missing at runtime on the
+      # oldest version we support. Raise this deliberately when the floor moves.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     labels:
       - "dependencies"
     groups:

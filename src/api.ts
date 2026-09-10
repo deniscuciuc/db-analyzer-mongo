@@ -160,7 +160,7 @@ export class MongoAnalyzer {
 		await this.connect();
 
 		const { CollectionAnalyzer } = await import(
-			"./analyzers/collection-analyzer"
+			"./analyzers/collection-analyzer.js"
 		);
 		const collections = new CollectionAnalyzer(
 			this.requireDb(),
