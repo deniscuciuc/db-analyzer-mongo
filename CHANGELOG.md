@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-09-10
+
+### Fixed
+
+- Expose `./package.json` through the `exports` map. Without it, tooling that reads a
+  dependency's `package.json` — a common pattern — fails with
+  `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+
 ## [1.3.0] - 2026-09-10
 
 ### Changed
