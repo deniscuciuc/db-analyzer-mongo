@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-09-10
+
+### Added
+
+- A README banner. The README is the whole npm listing, since npm has no package icon
+  field, so this is the package's only branding surface.
+
+### Fixed
+
+- `biome.json` pointed at the 2.3.11 schema after the bump to 2.5.12, which biome reported
+  as an info diagnostic on every run.
+
 ## [1.3.1] - 2026-09-10
 
 ### Fixed
