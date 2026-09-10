@@ -23,17 +23,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 20.6 is the floor (the dev scripts use --env-file); 24 is current.
-        node-version: ["20", "22", "24"]
+        # Node 20 reached end of life in April 2026, so 22 is the floor.
+        node-version: ["22", "24"]
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
           cache: "pnpm"
