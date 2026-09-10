@@ -1,6 +1,7 @@
 import type { Db } from "mongodb";
 
 import { calculateBenefitLevel, THRESHOLDS } from "../config/thresholds";
+import type { IndexMetadata } from "../mongo-shapes";
 import type {
 	AnalyzerOptions,
 	DuplicateIndex,
@@ -14,7 +15,7 @@ import {
 	filterCollectionNames,
 } from "../utils/collection-filters";
 import { ErrorCollector } from "../utils/errors";
-import { formatBytes, formatKeyPattern } from "../utils/formatting";
+import { formatBytes, formatKeyPattern } from "../utils/format";
 
 export class IndexAnalyzer {
 	private errorCollector = new ErrorCollector();
@@ -85,7 +86,7 @@ export class IndexAnalyzer {
 				const coll = this.db.collection(collName);
 
 				const indexes = await coll.indexes();
-				const indexMetadata = new Map<string, any>();
+				const indexMetadata = new Map<string, IndexMetadata>();
 				for (const idx of indexes) {
 					if (idx.name) {
 						indexMetadata.set(idx.name, idx);
@@ -246,11 +247,8 @@ export class IndexAnalyzer {
 				const indexes = await this.db.collection(collName).indexes();
 				const indexList = indexes.filter((idx) => idx.name !== "_id_");
 
-				for (let i = 0; i < indexList.length; i++) {
-					for (let j = i + 1; j < indexList.length; j++) {
-						const idx1 = indexList[i];
-						const idx2 = indexList[j];
-
+				for (const [i, idx1] of indexList.entries()) {
+					for (const idx2 of indexList.slice(i + 1)) {
 						const keys1 = Object.keys(idx1.key);
 						const keys2 = Object.keys(idx2.key);
 
@@ -432,9 +430,9 @@ export class IndexAnalyzer {
 					const indexMatch = planSummary.match(/IXSCAN\s+{\s*([^}]+)\s*}/);
 
 					if (indexMatch) {
-						const indexFields = indexMatch[1]
+						const indexFields = (indexMatch[1] ?? "")
 							.split(",")
-							.map((f: string) => f.split(":")[0].trim());
+							.map((f: string) => (f.split(":")[0] ?? "").trim());
 						const missingFields = projectedFields.filter(
 							(f) => !indexFields.includes(f) && f !== "_id",
 						);
@@ -523,7 +521,7 @@ export class IndexAnalyzer {
 	}
 
 	private getPotentialKeepReason(
-		metadata: any,
+		metadata: IndexMetadata,
 		accesses: number,
 	): string | undefined {
 		if (metadata.unique) {

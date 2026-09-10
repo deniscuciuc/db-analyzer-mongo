@@ -25,12 +25,52 @@ export function validateWatchCommand(command: string): void {
 export async function runWatchLoop(options: WatchOptions): Promise<void> {
 	validateWatchCommand(options.command);
 
+	if (
+		!Number.isFinite(options.intervalSeconds) ||
+		options.intervalSeconds <= 0
+	) {
+		throw new Error(`Invalid watch interval: ${options.intervalSeconds}`);
+	}
+
 	let stopped = false;
-	const handleSigInt = () => {
+	let pendingTimer: NodeJS.Timeout | undefined;
+	let signalCount = 0;
+
+	// The loop stops at the next checkpoint rather than mid-query, so the first
+	// signal is a graceful stop. A second one means the user is waiting on a slow
+	// round-trip and wants out now — restore the default behaviour so Ctrl+C
+	// actually exits instead of appearing to hang.
+	const requestStop = (signal: NodeJS.Signals) => {
 		stopped = true;
+		signalCount++;
+
+		if (pendingTimer) {
+			clearTimeout(pendingTimer);
+			pendingTimer = undefined;
+		}
+
+		if (signalCount === 1) {
+			process.stdout.write(
+				"\nStopping after the current iteration (press again to exit now)...\n",
+			);
+			return;
+		}
+
+		detach();
+		process.kill(process.pid, signal);
 	};
 
+	const handleSigInt = () => requestStop("SIGINT");
+	const handleSigTerm = () => requestStop("SIGTERM");
+
+	function detach(): void {
+		process.off("SIGINT", handleSigInt);
+		process.off("SIGTERM", handleSigTerm);
+	}
+
 	process.on("SIGINT", handleSigInt);
+	// Without this, `docker stop` skips the caller's connection cleanup.
+	process.on("SIGTERM", handleSigTerm);
 
 	try {
 		while (!stopped) {
@@ -56,7 +96,12 @@ export async function runWatchLoop(options: WatchOptions): Promise<void> {
 				}
 
 				process.stdout.write(`\rNext update in ${remaining}s...   `);
-				await new Promise((resolve) => setTimeout(resolve, 1000));
+				await new Promise<void>((resolve) => {
+					pendingTimer = setTimeout(() => {
+						pendingTimer = undefined;
+						resolve();
+					}, 1000);
+				});
 			}
 
 			if (!stopped) {
@@ -64,7 +109,10 @@ export async function runWatchLoop(options: WatchOptions): Promise<void> {
 			}
 		}
 	} finally {
-		process.off("SIGINT", handleSigInt);
+		if (pendingTimer) {
+			clearTimeout(pendingTimer);
+		}
+		detach();
 		process.stdout.write("\nWatch stopped.\n");
 	}
 }

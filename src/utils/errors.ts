@@ -1,3 +1,4 @@
+import type { MongoErrorLike } from "../mongo-shapes";
 /**
  * Custom error types for MongoDB Analyzer
  */
@@ -80,8 +81,8 @@ export function classifyMongoError(error: unknown): AnalysisErrorType {
 		message.includes("not authorized") ||
 		message.includes("authentication failed") ||
 		message.includes("requires authentication") ||
-		(error as any).code === 13 ||
-		(error as any).code === 18
+		(error as MongoErrorLike).code === 13 ||
+		(error as MongoErrorLike).code === 18
 	) {
 		return "permission";
 	}
@@ -90,7 +91,7 @@ export function classifyMongoError(error: unknown): AnalysisErrorType {
 	if (
 		message.includes("timeout") ||
 		message.includes("timed out") ||
-		(error as any).code === 50
+		(error as MongoErrorLike).code === 50
 	) {
 		return "timeout";
 	}
@@ -134,7 +135,7 @@ export function createAnalysisError(
 		collection: context?.collection,
 		operation: context?.operation,
 		originalError,
-		code: (error as any)?.code,
+		code: (error as MongoErrorLike | undefined)?.code,
 	});
 }
 

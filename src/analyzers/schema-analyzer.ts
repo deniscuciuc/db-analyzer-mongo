@@ -1,4 +1,5 @@
 import type { Db } from "mongodb";
+import type { BsonValue, SampledDocument } from "../mongo-shapes";
 import type {
 	AnalyzerOptions,
 	FieldInfo,
@@ -8,11 +9,24 @@ import type {
 } from "../types";
 import { filterCollectionNames } from "../utils/collection-filters";
 import { ErrorCollector } from "../utils/errors";
-import { formatBytes } from "../utils/formatting";
+import { formatBytes } from "../utils/format";
 
 /**
  * Schema Analyzer - analyzes document structure and field usage
  */
+/** Per-field statistics accumulated while sampling documents. */
+interface FieldAccumulator {
+	types: Map<string, number>;
+	count: number;
+	isArray: boolean;
+	hasNestedObjects: boolean;
+	arrayLengths: number[];
+	stringLengths: number[];
+	numericValues: number[];
+	dateValues: Date[];
+	distinctValues: Set<string>;
+}
+
 export class SchemaAnalyzer {
 	private errorCollector = new ErrorCollector();
 
@@ -37,20 +51,7 @@ export class SchemaAnalyzer {
 			.aggregate([{ $sample: { size: actualSampleSize } }])
 			.toArray();
 
-		const fieldMap = new Map<
-			string,
-			{
-				types: Map<string, number>;
-				count: number;
-				isArray: boolean;
-				hasNestedObjects: boolean;
-				arrayLengths: number[];
-				stringLengths: number[];
-				numericValues: number[];
-				dateValues: Date[];
-				distinctValues: Set<string>;
-			}
-		>();
+		const fieldMap = new Map<string, FieldAccumulator>();
 
 		for (const doc of documents) {
 			this.analyzeDocument(doc, "", fieldMap);
@@ -371,9 +372,9 @@ export class SchemaAnalyzer {
 	}
 
 	private analyzeDocument(
-		doc: any,
+		doc: SampledDocument,
 		prefix: string,
-		fieldMap: Map<string, any>,
+		fieldMap: Map<string, FieldAccumulator>,
 	): void {
 		for (const [key, value] of Object.entries(doc)) {
 			if (key === "_id" && prefix === "") continue; // Skip _id at root level
@@ -418,7 +419,7 @@ export class SchemaAnalyzer {
 				!(value instanceof Date)
 			) {
 				field.hasNestedObjects = true;
-				this.analyzeDocument(value, path, fieldMap);
+				this.analyzeDocument(value as SampledDocument, path, fieldMap);
 			} else if (typeof value === "string") {
 				field.stringLengths.push(value.length);
 				if (value.length < 100) {
@@ -432,21 +433,22 @@ export class SchemaAnalyzer {
 		}
 	}
 
-	private getValueType(value: any): string {
+	private getValueType(value: BsonValue): string {
 		if (value === null) return "null";
 		if (value === undefined) return "undefined";
 		if (Array.isArray(value)) return "array";
 		if (value instanceof Date) return "date";
 		if (value instanceof RegExp) return "regex";
 		if (typeof value === "object") {
-			if (
-				value._bsontype === "ObjectId" ||
-				value.constructor?.name === "ObjectId"
-			) {
+			// BSON values are tagged with _bsontype rather than being distinguishable by
+			// instanceof, since the driver may hand back instances from another realm.
+			const bsonType = (value as { _bsontype?: string })._bsontype;
+
+			if (bsonType === "ObjectId" || value.constructor?.name === "ObjectId") {
 				return "ObjectId";
 			}
-			if (value._bsontype === "Binary") return "binary";
-			if (value._bsontype === "Decimal128") return "decimal128";
+			if (bsonType === "Binary") return "binary";
+			if (bsonType === "Decimal128") return "decimal128";
 			return "object";
 		}
 		return typeof value;
@@ -516,7 +518,7 @@ export class SchemaAnalyzer {
 		return recommendations;
 	}
 
-	private estimateDocumentSize(documents: any[]): number {
+	private estimateDocumentSize(documents: SampledDocument[]): number {
 		if (documents.length === 0) return 0;
 
 		// Estimate average document size using BSON serialization approximation
@@ -528,7 +530,7 @@ export class SchemaAnalyzer {
 		return Math.round(totalSize / documents.length);
 	}
 
-	private estimateObjectSize(obj: any): number {
+	private estimateObjectSize(obj: BsonValue): number {
 		if (obj === null || obj === undefined) return 1;
 		if (typeof obj === "boolean") return 1;
 		if (typeof obj === "number") return 8;

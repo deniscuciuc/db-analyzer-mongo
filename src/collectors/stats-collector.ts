@@ -1,6 +1,11 @@
-import type { Db, MongoClient } from "mongodb";
+import type { Db, Document, Filter, MongoClient } from "mongodb";
 
 import { THRESHOLDS } from "../config/thresholds";
+import type {
+	BsonTimestampLike,
+	ReplSetMemberEntry,
+	ServerStatusResponse,
+} from "../mongo-shapes";
 import type {
 	AnalyzerOptions,
 	ConfigurationSetting,
@@ -19,7 +24,7 @@ import type {
 } from "../types";
 import { filterCollectionNames } from "../utils/collection-filters";
 import { ErrorCollector } from "../utils/errors";
-import { formatBytes } from "../utils/formatting";
+import { formatBytes } from "../utils/format";
 
 export class StatsCollector {
 	private errorCollector = new ErrorCollector();
@@ -39,7 +44,7 @@ export class StatsCollector {
 				.catch(() => null),
 		]);
 
-		const cacheHitRatio = this.calculateCacheHitRatio(serverStatus);
+		const cacheHitRatio = this.calculateCacheHitRatio(serverStatus ?? {});
 		const connections = serverStatus?.connections ?? {};
 		const opcounters = serverStatus?.opcounters ?? {};
 		const globalLock = serverStatus?.globalLock ?? {};
@@ -148,7 +153,7 @@ export class StatsCollector {
 			const status = await this.db.admin().command({ replSetGetStatus: 1 });
 
 			const primaryMember = status.members?.find(
-				(m: any) => m.stateStr === "PRIMARY",
+				(m: ReplSetMemberEntry) => m.stateStr === "PRIMARY",
 			);
 			const primaryOptimeDate = primaryMember?.optimeDate
 				? new Date(primaryMember.optimeDate)
@@ -160,7 +165,7 @@ export class StatsCollector {
 				term: status.term,
 				heartbeatIntervalMs: status.heartbeatIntervalMillis,
 				members:
-					status.members?.map((m: any) => {
+					status.members?.map((m: ReplSetMemberEntry) => {
 						let replicationLagSeconds: number | undefined;
 						if (
 							m.stateStr === "SECONDARY" &&
@@ -241,7 +246,9 @@ export class StatsCollector {
 			try {
 				const balancerState = await configDb
 					.collection("settings")
-					.findOne({ _id: "balancer" } as any);
+					// The driver types _id as ObjectId for an untyped collection; the config
+					// database uses string ids.
+					.findOne({ _id: "balancer" } as unknown as Filter<Document>);
 				balancerStatus = {
 					running: balancerState?.mode !== "off",
 					mode: (balancerState?.mode as string) ?? "full",
@@ -369,7 +376,14 @@ export class StatsCollector {
 				try {
 					const opCount = await oplog.estimatedDocumentCount();
 					opsPerSecond = Math.round(opCount / timeDiffSeconds);
-				} catch {}
+				} catch (error) {
+					// Counting the oplog needs privileges the analyzer may not have. The rest
+					// of the oplog stats are still useful, so report the gap instead of
+					// swallowing it silently.
+					const message =
+						error instanceof Error ? error.message : String(error);
+					console.warn(`Could not compute oplog ops/sec: ${message}`);
+				}
 			}
 
 			return {
@@ -467,7 +481,7 @@ export class StatsCollector {
 
 					for (const idx of indexes) {
 						if (idx.expireAfterSeconds !== undefined) {
-							const field = Object.keys(idx.key)[0];
+							const field = Object.keys(idx.key)[0] ?? "";
 							const seconds = idx.expireAfterSeconds;
 
 							let expireAfterFormatted: string;
@@ -527,9 +541,11 @@ export class StatsCollector {
 				.map((s) => s.docSize as number)
 				.sort((a, b) => a - b);
 			const avgDocSize = sizes.reduce((a, b) => a + b, 0) / sizes.length;
-			const minDocSize = sizes[0];
-			const maxDocSize = sizes[sizes.length - 1];
-			const medianDocSize = sizes[Math.floor(sizes.length / 2)];
+			// sizes is non-empty here — the caller returns early on an empty sample — but
+			// noUncheckedIndexedAccess cannot see that.
+			const minDocSize = sizes[0] ?? 0;
+			const maxDocSize = sizes[sizes.length - 1] ?? 0;
+			const medianDocSize = sizes[Math.floor(sizes.length / 2)] ?? 0;
 
 			const buckets = [
 				{ max: 1024, label: "< 1 KB" },
@@ -544,7 +560,7 @@ export class StatsCollector {
 					(s) =>
 						s <= bucket.max &&
 						(bucket === buckets[0] ||
-							s > buckets[buckets.indexOf(bucket) - 1].max),
+							s > (buckets[buckets.indexOf(bucket) - 1]?.max ?? -1)),
 				).length;
 				return {
 					bucket: bucket.label,
@@ -795,7 +811,7 @@ export class StatsCollector {
 		return this.errorCollector.getErrors();
 	}
 
-	private calculateCacheHitRatio(serverStatus: any): number {
+	private calculateCacheHitRatio(serverStatus: ServerStatusResponse): number {
 		if (!serverStatus?.wiredTiger?.cache) {
 			// Return -1 to indicate unavailable data (e.g. insufficient permissions)
 			// rather than masking the issue as a perfect 100%
@@ -811,9 +827,16 @@ export class StatsCollector {
 		return Math.round((hits / (hits + misses)) * 10000) / 100;
 	}
 
-	private getTimestampSeconds(ts: any): number {
-		// Handle MongoDB Timestamp type
-		if (ts && typeof ts.getHighBits === "function") {
+	private getTimestampSeconds(
+		ts: BsonTimestampLike | number | Date | undefined,
+	): number {
+		// A BSON Timestamp keeps its seconds in the high bits.
+		if (
+			ts !== undefined &&
+			typeof ts === "object" &&
+			"getHighBits" in ts &&
+			typeof ts.getHighBits === "function"
+		) {
 			return ts.getHighBits();
 		}
 		// Handle Date

@@ -1,28 +1,39 @@
 name: CI
 
 on:
+  # Every branch, not just main and develop: a feature branch previously ran no CI at all,
+  # so a push had to become a PR before anything was checked.
   push:
-    branches: [main, develop]
+    branches: ['**']
   pull_request:
-    branches: [main, develop]
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   ci:
-    name: Lint & Build
+    name: Lint, build & test (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
 
     strategy:
+      fail-fast: false
       matrix:
-        node-version: ["20", "22"]
+        # 20.6 is the floor (the dev scripts use --env-file); 24 is current.
+        node-version: ["20", "22", "24"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: pnpm/action-setup@v4
         with:
           version: 10
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node-version }}
           cache: "pnpm"
@@ -36,5 +47,9 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Test
+        run: pnpm test
+
       - name: Smoke test - help output
-        run: node dist/index.js --help
+        run: node dist/src/cli/main.js --help
+

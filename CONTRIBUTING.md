@@ -37,7 +37,7 @@ pnpm lint:fix
 
 ## Coding standards
 
-- TypeScript strict mode - no `any`
+- TypeScript strict mode, with `noUncheckedIndexedAccess` — and no `any`, which Biome enforces
 - Biome formatting (tab indent, enforced by CI)
 - No new runtime dependencies without discussion in an issue first
 

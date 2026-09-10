@@ -4,6 +4,7 @@ import {
 	getThresholds,
 	THRESHOLDS,
 } from "../config/thresholds";
+import type { CollStatsResponse } from "../mongo-shapes";
 import type {
 	AnalyzerOptions,
 	CollectionStats,
@@ -13,7 +14,7 @@ import type {
 } from "../types";
 import { filterCollectionNames } from "../utils/collection-filters";
 import { ErrorCollector } from "../utils/errors";
-import { formatBytes } from "../utils/formatting";
+import { formatBytes } from "../utils/format";
 
 export class CollectionAnalyzer {
 	private errorCollector = new ErrorCollector();
@@ -285,8 +286,8 @@ export class CollectionAnalyzer {
 		const startTime = Date.now();
 		let totalBytesFreed = 0;
 
-		for (let i = 0; i < targets.length; i++) {
-			const { collection } = targets[i];
+		for (const [i, target] of targets.entries()) {
+			const { collection } = target;
 			const result = await this.compactCollection(collection);
 			results.push(result);
 			totalBytesFreed += result.bytesFreed ?? 0;
@@ -392,7 +393,9 @@ export class CollectionAnalyzer {
 		);
 	}
 
-	private calculateCompressionRatio(collStats: any): number | undefined {
+	private calculateCompressionRatio(
+		collStats: CollStatsResponse,
+	): number | undefined {
 		// WiredTiger specific compression info
 		const wt = collStats.wiredTiger;
 		if (!wt) return undefined;
