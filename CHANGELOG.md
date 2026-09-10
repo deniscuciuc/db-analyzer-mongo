@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-10
+
+### Changed
+
+- TypeScript 7, and `mongodb` to 7, `@inquirer/prompts` and `@biomejs/biome` to their current
+  releases. Verified against a real database container through both the CLI and the
+  programmatic API, not on a green type-check alone.
+- `@types/node` is named explicitly in `tsconfig.json`. TypeScript 7 no longer reliably
+  auto-includes it, which left every Node global — `console`, `process`, `URL`,
+  `setTimeout` — unresolved.
+
+### Note
+
+The 1.2.0 entry originally listed these dependency updates, but they were not in that
+release; only the Node 22 floor, the `nodenext` move and the Actions bumps were. That entry
+has been corrected and the updates ship here.
+
 ## [1.2.0] - 2026-09-10
 
 ### Changed
@@ -15,13 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   30 April 2026. This also fixes a latent bug: `@inquirer/prompts` v8 is ESM-only, and
   `require()` of an ES module only works from Node 20.19 onward — so interactive mode was
   broken on Node 20.0 through 20.18, which the previous `>=20` range claimed to support.
-- TypeScript 7. It removes the legacy `node10` module resolution, so the projects moved to
-  `nodenext`, which is what correctly models Node 22+ being able to `require()` an ES
-  module. `@types/node` is pinned to the supported floor rather than the newest release, so
-  the compiler rejects APIs that would not exist at runtime.
-- Updated `ioredis` to 6, `mongodb` to 7, `pg`, `@inquirer/prompts` and `@biomejs/biome`,
-  and the GitHub Actions to their current majors. Each was verified against a real database
-  container, not just a green type-check.
+- Moved to `nodenext` module resolution, which correctly models Node 22+ being able to
+  `require()` an ES module.
+- Updated the GitHub Actions to their current majors.
 
 ## [1.1.0] - 2026-09-10
 
