@@ -1,3 +1,5 @@
+![mongo-analyzer](https://raw.githubusercontent.com/deniscuciuc/db-analyzer-mongo/main/assets/banner.png)
+
 # MongoDB Analyzer
 
 [![Node.js 22+](https://img.shields.io/badge/node-20%2B-339933?logo=node.js)](https://nodejs.org/)
