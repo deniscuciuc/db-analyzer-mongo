@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-"use strict";
 
 // tsc does not preserve a shebang, so the compiled CLI entry gets one here.
 const fs = require("node:fs");

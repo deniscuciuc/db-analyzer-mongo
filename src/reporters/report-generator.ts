@@ -357,8 +357,7 @@ ${issues.length > 0 ? issues.join("\n") : "- No critical issues found"}
 			.sort((a, b) => b.totalExecutionTime - a.totalExecutionTime)
 			.slice(0, 10);
 
-		for (let i = 0; i < topByTime.length; i++) {
-			const q = topByTime[i];
+		for (const [i, q] of topByTime.entries()) {
 			content += `#### ${i + 1}. ${q.operation.toUpperCase()} on ${q.namespace}\n\n`;
 			content += `**Total: ${formatMs(q.totalExecutionTime)}, Avg: ${formatMs(q.avgExecutionTime)}, Count: ${q.executionCount}**\n\n`;
 			content += "```javascript\n";

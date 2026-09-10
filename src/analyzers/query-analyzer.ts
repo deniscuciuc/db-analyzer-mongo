@@ -5,6 +5,7 @@ import {
 	getThresholds,
 	THRESHOLDS,
 } from "../config/thresholds";
+import type { CurrentOpEntry, ProfileEntry } from "../mongo-shapes";
 import type {
 	AnalyzerOptions,
 	BlockingOperation,
@@ -37,6 +38,17 @@ const QUERY_OPERATIONS: QueryOperation[] = [
 	"count",
 	"distinct",
 ];
+
+/** Returns the first argument that is a number, or 0 when none is. */
+function firstNumber(...values: unknown[]): number {
+	for (const value of values) {
+		if (typeof value === "number" && Number.isFinite(value)) {
+			return value;
+		}
+	}
+
+	return 0;
+}
 
 export class QueryAnalyzer {
 	private errorCollector = new ErrorCollector();
@@ -96,7 +108,7 @@ export class QueryAnalyzer {
 			const queryMap = new Map<
 				string,
 				{
-					queries: any[];
+					queries: ProfileEntry[];
 					totalTime: number;
 					count: number;
 				}
@@ -122,6 +134,10 @@ export class QueryAnalyzer {
 
 			for (const [hash, data] of queryMap) {
 				const sample = data.queries[0];
+				if (sample === undefined) {
+					continue;
+				}
+
 				const times = data.queries.map((q) => q.millis ?? 0);
 				const avgTime = data.totalTime / data.count;
 
@@ -129,15 +145,18 @@ export class QueryAnalyzer {
 					queryHash: hash,
 					queryShape: this.getQueryShape(sample),
 					namespace: sample.ns ?? "",
-					operation: this.normalizeOperation(sample.op),
+					operation: this.normalizeOperation(sample.op ?? ""),
 					executionCount: data.count,
 					totalExecutionTime: data.totalTime,
 					avgExecutionTime: Math.round(avgTime),
 					minExecutionTime: Math.min(...times),
 					maxExecutionTime: Math.max(...times),
 					docsExamined: sample.docsExamined ?? 0,
-					docsReturned:
-						sample.nreturned ?? sample.nMatched ?? sample.nModified ?? 0,
+					docsReturned: firstNumber(
+						sample.nreturned,
+						sample.nMatched,
+						sample.nModified,
+					),
 					keysExamined: sample.keysExamined ?? 0,
 					planSummary: sample.planSummary ?? "N/A",
 					recommendations: this.generateQueryRecommendations(sample, data),
@@ -184,7 +203,7 @@ export class QueryAnalyzer {
 			const queryMap = new Map<
 				string,
 				{
-					queries: any[];
+					queries: ProfileEntry[];
 					totalTime: number;
 				}
 			>();
@@ -209,21 +228,28 @@ export class QueryAnalyzer {
 				if (data.queries.length < minCount) continue;
 
 				const sample = data.queries[0];
+				if (sample === undefined) {
+					continue;
+				}
+
 				const times = data.queries.map((q) => q.millis ?? 0);
 
 				stats.push({
 					queryHash: hash,
 					queryShape: this.getQueryShape(sample),
 					namespace: sample.ns ?? "",
-					operation: this.normalizeOperation(sample.op),
+					operation: this.normalizeOperation(sample.op ?? ""),
 					executionCount: data.queries.length,
 					totalExecutionTime: data.totalTime,
 					avgExecutionTime: Math.round(data.totalTime / data.queries.length),
 					minExecutionTime: Math.min(...times),
 					maxExecutionTime: Math.max(...times),
 					docsExamined: sample.docsExamined ?? 0,
-					docsReturned:
-						sample.nreturned ?? sample.nMatched ?? sample.nModified ?? 0,
+					docsReturned: firstNumber(
+						sample.nreturned,
+						sample.nMatched,
+						sample.nModified,
+					),
 					keysExamined: sample.keysExamined ?? 0,
 					planSummary: sample.planSummary ?? "N/A",
 				});
@@ -247,10 +273,10 @@ export class QueryAnalyzer {
 
 			return ops
 				.filter(
-					(op: any) =>
+					(op: CurrentOpEntry) =>
 						op.op && op.op !== "none" && this.isSelectedNamespace(op.ns ?? ""),
 				)
-				.map((op: any) => {
+				.map((op: CurrentOpEntry) => {
 					const runningTime = op.microsecs_running
 						? Math.round(op.microsecs_running / 1000)
 						: 0;
@@ -292,10 +318,10 @@ export class QueryAnalyzer {
 
 			const blocking = ops
 				.filter(
-					(op: any) =>
+					(op: CurrentOpEntry) =>
 						op.waitingForLock === true && this.isSelectedNamespace(op.ns ?? ""),
 				)
-				.map((op: any) => {
+				.map((op: CurrentOpEntry) => {
 					const waitingTime = op.microsecs_running
 						? Math.round(op.microsecs_running / 1000)
 						: 0;
@@ -482,35 +508,43 @@ export class QueryAnalyzer {
 		return "unknown";
 	}
 
-	private getQueryHash(query: any): string {
+	private getQueryHash(query: Record<string, unknown>): string {
 		const shape = {
 			op: query.op,
 			ns: query.ns,
-			command: this.normalizeCommand(query.command ?? query.query ?? {}),
+			command: this.normalizeCommand(
+				(query.command ?? query.query ?? {}) as Record<string, unknown>,
+			),
 		};
 		return JSON.stringify(shape);
 	}
 
-	private getQueryShape(query: any): string {
-		const command = query.command ?? query.query ?? {};
+	private getQueryShape(query: Record<string, unknown>): string {
+		const command = (query.command ?? query.query ?? {}) as Record<
+			string,
+			unknown
+		>;
 		const normalized = this.normalizeCommand(command);
 		return JSON.stringify(normalized).substring(0, 200);
 	}
 
 	private normalizeCommand(
-		command: Record<string, any>,
+		command: Record<string, unknown>,
 		depth = 0,
-	): Record<string, any> {
+	): Record<string, unknown> {
 		if (depth > 10) return { "...": "too deep" };
 
-		const normalized: Record<string, any> = {};
+		const normalized: Record<string, unknown> = {};
 		for (const [key, value] of Object.entries(command)) {
 			if (key === "lsid" || key === "$clusterTime" || key === "$db") continue;
 			if (typeof value === "object" && value !== null) {
 				if (Array.isArray(value)) {
 					normalized[key] = "[...]";
 				} else {
-					normalized[key] = this.normalizeCommand(value, depth + 1);
+					normalized[key] = this.normalizeCommand(
+						value as Record<string, unknown>,
+						depth + 1,
+					);
 				}
 			} else {
 				normalized[key] = "<value>";
@@ -520,15 +554,15 @@ export class QueryAnalyzer {
 	}
 
 	private generateQueryRecommendations(
-		query: any,
-		data: { queries: any[]; totalTime: number; count: number },
+		query: Record<string, unknown>,
+		data: { queries: ProfileEntry[]; totalTime: number; count: number },
 	): string[] {
 		const thresholds = getThresholds(this.options.thresholds);
 		const recommendations: string[] = [];
-		const planSummary = query.planSummary ?? "";
-		const docsExamined = query.docsExamined ?? 0;
-		const docsReturned = query.nreturned ?? 0;
-		const keysExamined = query.keysExamined ?? 0;
+		const planSummary = String(query.planSummary ?? "");
+		const docsExamined = firstNumber(query.docsExamined);
+		const docsReturned = firstNumber(query.nreturned);
+		const keysExamined = firstNumber(query.keysExamined);
 		const avgTime = data.totalTime / data.count;
 
 		if (planSummary.includes("COLLSCAN")) {

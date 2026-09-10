@@ -1,17 +1,14 @@
 {
 	"$schema": "https://biomejs.dev/schemas/2.3.11/schema.json",
 	"files": {
-		"includes": ["*.ts", "src/**/*.ts"]
+		"includes": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.js"]
 	},
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"suspicious": {
-				"noExplicitAny": "off"
-			},
 			"correctness": {
-				"noUnusedVariables": "warn",
-				"noUnusedImports": "warn"
+				"noUnusedVariables": "error",
+				"noUnusedImports": "error"
 			},
 			"style": {
 				"noNonNullAssertion": "off"

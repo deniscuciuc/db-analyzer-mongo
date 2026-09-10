@@ -47,46 +47,46 @@ export function parseOptions(argv = process.argv.slice(2)): ParsedOptions {
 	for (let index = 0; index < argv.length; index++) {
 		switch (argv[index]) {
 			case "--uri":
-				options.uri = argv[++index];
+				options.uri = requireValue("--uri", argv[++index]);
 				break;
 			case "--host":
 			case "-h":
-				options.host = argv[++index];
+				options.host = requireValue("--host", argv[++index]);
 				break;
 			case "--port":
 			case "-p":
-				options.port = Number.parseInt(argv[++index], 10);
+				options.port = parseNumericFlag("--port", argv[++index]);
 				break;
 			case "--database":
 			case "-d":
-				options.database = argv[++index];
+				options.database = requireValue("--database", argv[++index]);
 				break;
 			case "--user":
 			case "-U":
-				options.user = argv[++index];
+				options.user = requireValue("--user", argv[++index]);
 				break;
 			case "--password":
 			case "-W":
-				options.password = argv[++index];
+				options.password = requireValue("--password", argv[++index]);
 				break;
 			case "--authSource":
-				options.authSource = argv[++index];
+				options.authSource = requireValue("--authSource", argv[++index]);
 				break;
 			case "--output":
 			case "-o":
-				options.outputDir = argv[++index];
+				options.outputDir = requireValue("--output", argv[++index]);
 				break;
 			case "--profile":
-				options.profile = argv[++index];
+				options.profile = requireValue("--profile", argv[++index]);
 				break;
 			case "--config":
-				options.config = argv[++index];
+				options.config = requireValue("--config", argv[++index]);
 				break;
 			case "--collections":
 				options.collections = parseList(argv[++index]);
 				break;
 			case "--compare":
-				options.compare = argv[++index];
+				options.compare = requireValue("--compare", argv[++index]);
 				break;
 			case "--yes":
 			case "-y":
@@ -100,7 +100,10 @@ export function parseOptions(argv = process.argv.slice(2)): ParsedOptions {
 				break;
 			case "--watch": {
 				const nextValue = argv[index + 1];
-				if (nextValue && !nextValue.startsWith("-")) {
+				// A bare "-" prefix is not enough to tell a flag from a negative number:
+				// `--watch -1` used to be read as a flag and silently fall back to the
+				// default instead of being rejected.
+				if (nextValue !== undefined && /^-?\d+$/.test(nextValue)) {
 					options.watch = Number.parseInt(nextValue, 10);
 					index++;
 				} else {
@@ -109,13 +112,22 @@ export function parseOptions(argv = process.argv.slice(2)): ParsedOptions {
 				break;
 			}
 			case "--slow-query-threshold":
-				options.slowQueryThreshold = Number.parseInt(argv[++index], 10);
+				options.slowQueryThreshold = parseNumericFlag(
+					"--slow-query-threshold",
+					argv[++index],
+				);
 				break;
 			case "--schema-sample-size":
-				options.schemaSampleSize = Number.parseInt(argv[++index], 10);
+				options.schemaSampleSize = parseNumericFlag(
+					"--schema-sample-size",
+					argv[++index],
+				);
 				break;
 			case "--min-index-accesses":
-				options.minIndexAccesses = Number.parseInt(argv[++index], 10);
+				options.minIndexAccesses = parseNumericFlag(
+					"--min-index-accesses",
+					argv[++index],
+				);
 				break;
 			case "--help":
 				printHelp();
@@ -131,13 +143,23 @@ export function parseOptions(argv = process.argv.slice(2)): ParsedOptions {
 				break;
 			case "--command":
 			case "-c":
-				options.command = argv[++index];
+				options.command = requireValue("--command", argv[++index]);
 				break;
 			case "--interactive":
 			case "-i":
 			case "start":
 				options.interactive = true;
 				break;
+			default: {
+				// Previously ignored, so a typo like --jsno silently produced human output.
+				const token = argv[index];
+				if (token?.startsWith("-")) {
+					throw new Error(
+						`Unknown option: ${token}. Run --help for the list of options.`,
+					);
+				}
+				break;
+			}
 		}
 	}
 
@@ -160,6 +182,34 @@ export function toAnalyzerOptions(options: ParsedOptions): AnalyzerOptions {
 		thresholds: options.thresholds,
 		schemaSampleSize: options.schemaSampleSize,
 	};
+}
+
+/**
+ * Parses a numeric flag value, rejecting a missing or non-numeric one.
+ *
+ * `Number.parseInt` returns NaN for both, which used to flow into the driver and surface
+ * as a confusing error far from the actual mistake.
+ */
+function parseNumericFlag(flag: string, value: string | undefined): number {
+	if (value === undefined || value.startsWith("-")) {
+		throw new Error(`${flag} requires a value.`);
+	}
+
+	const parsed = Number.parseInt(value, 10);
+	if (!Number.isFinite(parsed) || parsed <= 0) {
+		throw new Error(`${flag} must be a positive number, got '${value}'.`);
+	}
+
+	return parsed;
+}
+
+/** Parses a string flag value, rejecting a missing one. */
+function requireValue(flag: string, value: string | undefined): string {
+	if (value === undefined) {
+		throw new Error(`${flag} requires a value.`);
+	}
+
+	return value;
 }
 
 function parseList(value?: string): string[] | undefined {

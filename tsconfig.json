@@ -15,7 +15,12 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": false,
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
   "include": [
     "src/**/*.ts",
