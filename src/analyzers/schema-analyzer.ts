@@ -8,7 +8,7 @@ import type {
 } from "../types";
 import { filterCollectionNames } from "../utils/collection-filters";
 import { ErrorCollector } from "../utils/errors";
-import { formatBytes } from "../utils/formatting";
+import { formatBytes } from "../utils/format";
 
 /**
  * Schema Analyzer - analyzes document structure and field usage

@@ -29,38 +29,39 @@
     "access": "public"
   },
   "bin": {
-    "mongo-analyzer": "./dist/index.js"
+    "mongo-analyzer": "./dist/src/cli/main.js"
   },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
   "files": [
-    "dist/",
+    "dist/src/",
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
     "analyzerrc.example.json"
   ],
   "scripts": {
-    "start": "node --env-file=.env -r ts-node/register index.ts start",
-    "analyze": "node --env-file=.env -r ts-node/register index.ts",
-    "analyze:help": "node -r ts-node/register index.ts --help",
-    "analyze:health": "node --env-file=.env -r ts-node/register index.ts -j -c health",
-    "analyze:indexes": "node --env-file=.env -r ts-node/register index.ts -j -c unused-indexes",
-    "analyze:queries": "node --env-file=.env -r ts-node/register index.ts -j -c slow-queries",
-    "analyze:html": "node --env-file=.env -r ts-node/register index.ts --html -c full",
-    "analyze:watch": "node --env-file=.env -r ts-node/register index.ts -c health --watch 30",
-    "compact": "node --env-file=.env -r ts-node/register index.ts -c run-compact",
-    "compact:check": "node --env-file=.env -r ts-node/register index.ts -j -c compact-needed",
-    "profiler:enable": "node --env-file=.env -r ts-node/register index.ts -j -c enable-profiler",
-    "profiler:disable": "node --env-file=.env -r ts-node/register index.ts -j -c disable-profiler",
-    "build": "tsc",
+    "start": "node --env-file=.env -r ts-node/register src/cli/main.ts start",
+    "analyze": "node --env-file=.env -r ts-node/register src/cli/main.ts",
+    "analyze:help": "node -r ts-node/register src/cli/main.ts --help",
+    "analyze:health": "node --env-file=.env -r ts-node/register src/cli/main.ts -j -c health",
+    "analyze:indexes": "node --env-file=.env -r ts-node/register src/cli/main.ts -j -c unused-indexes",
+    "analyze:queries": "node --env-file=.env -r ts-node/register src/cli/main.ts -j -c slow-queries",
+    "analyze:html": "node --env-file=.env -r ts-node/register src/cli/main.ts --html -c full",
+    "analyze:watch": "node --env-file=.env -r ts-node/register src/cli/main.ts -c health --watch 30",
+    "compact": "node --env-file=.env -r ts-node/register src/cli/main.ts -c run-compact",
+    "compact:check": "node --env-file=.env -r ts-node/register src/cli/main.ts -j -c compact-needed",
+    "profiler:enable": "node --env-file=.env -r ts-node/register src/cli/main.ts -j -c enable-profiler",
+    "profiler:disable": "node --env-file=.env -r ts-node/register src/cli/main.ts -j -c disable-profiler",
+    "build": "rm -rf dist && tsc && node scripts/add-shebang.js",
     "postbuild": "node scripts/add-shebang.js",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "prepublishOnly": "pnpm lint && pnpm build",
     "release:patch": "npm version patch && git push && git push --tags",
     "release:minor": "npm version minor && git push && git push --tags",
-    "release:major": "npm version major && git push && git push --tags"
+    "release:major": "npm version major && git push && git push --tags",
+    "test": "node --test dist/tests/*.test.js"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.1.0",
@@ -73,7 +74,15 @@
     "typescript": "^5.9.3"
   },
   "engines": {
-    "node": ">=20",
+    "node": ">=20.6",
     "pnpm": ">=10"
-  }
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "require": "./dist/src/index.js",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "sideEffects": false
 }

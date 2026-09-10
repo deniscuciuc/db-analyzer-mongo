@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 "use strict";
 
+// tsc does not preserve a shebang, so the compiled CLI entry gets one here.
 const fs = require("node:fs");
 const path = require("node:path");
 
-const file = path.join(__dirname, "..", "dist", "index.js");
+const file = path.join(__dirname, "..", "dist", "src", "cli", "main.js");
+const relative = path.relative(path.join(__dirname, ".."), file);
 
 if (!fs.existsSync(file)) {
-	console.error("dist/index.js not found - run pnpm build first");
+	console.error(`${relative} not found - run pnpm build first`);
 	process.exit(1);
 }
 
@@ -21,4 +23,4 @@ if (process.platform !== "win32") {
 	fs.chmodSync(file, 0o755);
 }
 
-console.log("shebang added to dist/index.js");
+console.log(`shebang added to ${relative}`);

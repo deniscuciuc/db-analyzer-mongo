@@ -19,7 +19,7 @@ import type {
 } from "../types";
 import { filterCollectionNames } from "../utils/collection-filters";
 import { ErrorCollector } from "../utils/errors";
-import { formatBytes } from "../utils/formatting";
+import { formatBytes } from "../utils/format";
 
 export class StatsCollector {
 	private errorCollector = new ErrorCollector();
@@ -369,7 +369,14 @@ export class StatsCollector {
 				try {
 					const opCount = await oplog.estimatedDocumentCount();
 					opsPerSecond = Math.round(opCount / timeDiffSeconds);
-				} catch {}
+				} catch (error) {
+					// Counting the oplog needs privileges the analyzer may not have. The rest
+					// of the oplog stats are still useful, so report the gap instead of
+					// swallowing it silently.
+					const message =
+						error instanceof Error ? error.message : String(error);
+					console.warn(`Could not compute oplog ops/sec: ${message}`);
+				}
 			}
 
 			return {

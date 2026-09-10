@@ -14,7 +14,7 @@ import {
 	filterCollectionNames,
 } from "../utils/collection-filters";
 import { ErrorCollector } from "../utils/errors";
-import { formatBytes, formatKeyPattern } from "../utils/formatting";
+import { formatBytes, formatKeyPattern } from "../utils/format";
 
 export class IndexAnalyzer {
 	private errorCollector = new ErrorCollector();

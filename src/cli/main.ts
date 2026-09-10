@@ -1,15 +1,15 @@
 import { type Db, MongoClient } from "mongodb";
-
-import { parseOptions } from "./src/cli/options";
-import { executeCommand } from "./src/cli/runner";
+import { loadConfig, resolveProfile } from "../config/loader";
 import {
-	assertConfirmedIfDestructive,
-	assertKnownCommand,
-} from "./src/cli/validate";
-import { loadConfig, resolveProfile } from "./src/config/loader";
-import { DEFAULTS } from "./src/constants";
-import { InteractiveCLI } from "./src/interactive";
-import { runWatchLoop } from "./src/watch/runner";
+	buildConnectionUri,
+	parseDatabaseFromConnectionString,
+} from "../connection";
+import { DEFAULTS } from "../constants";
+import { InteractiveCLI } from "../interactive";
+import { runWatchLoop } from "../watch/runner";
+import { parseOptions } from "./options";
+import { executeCommand } from "./runner";
+import { assertConfirmedIfDestructive, assertKnownCommand } from "./validate";
 
 function resolveValue<T>(
 	cliValue: T | undefined,
@@ -27,41 +27,6 @@ function resolveValue<T>(
 	}
 
 	return envValue ?? profileValue ?? cliValue ?? fallbackValue;
-}
-
-function buildConnectionUri(config: {
-	uri?: string;
-	host: string;
-	port: number;
-	database: string;
-	user?: string;
-	password?: string;
-	authSource: string;
-}): string {
-	if (config.uri) {
-		return config.uri;
-	}
-
-	if (config.user && config.password) {
-		return `mongodb://${encodeURIComponent(config.user)}:${encodeURIComponent(config.password)}@${config.host}:${config.port}/${config.database}?authSource=${config.authSource}`;
-	}
-
-	return `mongodb://${config.host}:${config.port}/${config.database}`;
-}
-
-function parseDatabaseFromConnectionString(
-	connectionString: string,
-): string | undefined {
-	try {
-		const normalized = connectionString.replace("mongodb+srv://", "mongodb://");
-		const url = new URL(normalized);
-		if (url.pathname.length > 1) {
-			return url.pathname.substring(1);
-		}
-		return undefined;
-	} catch {
-		return connectionString.match(/\/([^/?]+)(?:\?|$)/)?.[1];
-	}
 }
 
 async function main(): Promise<void> {

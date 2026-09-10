@@ -19,7 +19,7 @@ import {
 	getCollectionNameFromNamespace,
 } from "../utils/collection-filters";
 import { ErrorCollector } from "../utils/errors";
-import { formatDuration } from "../utils/formatting";
+import { formatDuration } from "../utils/format";
 
 /**
  * Supported query operations for analysis

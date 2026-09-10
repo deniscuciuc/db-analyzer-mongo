@@ -16,7 +16,7 @@ import type {
 	TTLIndexInfo,
 	WiredTigerStats,
 } from "../types";
-import { formatBytes, formatMs } from "../utils/formatting";
+import { formatBytes, formatMs } from "../utils/format";
 import { calculateHealthScore } from "../utils/health";
 import { HtmlReporter } from "./html-reporter";
 

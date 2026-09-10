@@ -271,6 +271,7 @@ npx ts-node index.ts --uri "mongodb+srv://..." -c full
 | `--watch`                       |       | Poll interval in seconds (enables watch mode) | -          |
 | `--slow-query-threshold <ms>`   |       | Slow-query threshold                         | `100`       |
 | `--min-index-accesses <n>`      |       | Min accesses to consider an index "used"     | `50`        |
+| `--schema-sample-size <n>` | Documents sampled per collection for schema analysis (default: `1000`) |
 | `--output <dir>`                | `-o`  | Reports directory                            | `./reports` |
 | `--command <cmd>`               | `-c`  | Run a single command (see table)             | `full`      |
 | `--json`                        | `-j`  | JSON output                                  | `false`     |
@@ -367,19 +368,64 @@ Output:
 
 ## Programmatic usage
 
-```ts
-import { MongoDBAnalyzer } from "@deniscuciuc/mongo-analyzer";
+The package has two entry points. Importing it gives you the library and does nothing else;
+the CLI is reached through the `mongo-analyzer` binary.
 
-const analyzer = await MongoDBAnalyzer.connect({
-  uri: process.env.MONGODB_CONNECTION_STRING!,
+```ts
+import { MongoAnalyzer } from "@deniscuciuc/mongo-analyzer";
+
+const analyzer = new MongoAnalyzer({
+  uri: process.env.MONGODB_CONNECTION_STRING,
   database: "mydb",
+  outputDir: "./reports",
 });
 
-const report = await analyzer.analyze();
-analyzer.printSummary(report);
-await analyzer.generateReport(report);
-await analyzer.close();
+try {
+  const report = await analyzer.analyze();
+
+  const health = analyzer.healthScore(report);
+  console.log(`Health: ${health.score}/100 (${health.status})`);
+  for (const issue of health.issues) {
+    console.log(`- ${issue}`);
+  }
+
+  // "markdown" (default), "json" or "html"; returns the path written.
+  const path = await analyzer.generateReport("json", report);
+  console.log(`Report written to ${path}`);
+} finally {
+  await analyzer.close();
+}
 ```
+
+### `MongoAnalyzer`
+
+| Member | Description |
+|---|---|
+| `new MongoAnalyzer(options?)` | Opens no connection. See the option table below. |
+| `connect()` | Connects and pings. Called automatically by `analyze()`; call it directly to surface a connection failure early. |
+| `analyze()` | Runs a full analysis and resolves to an `AnalysisReport`. |
+| `healthScore(report)` | Returns `{ score, status, issues }` for a report. |
+| `compact()` | Runs `compact` on fragmented collections. Separate from `analyze()` because it changes server state and, on older MongoDB, blocks the database. |
+| `generateReport(format?, report?)` | Writes a report and resolves to the file path. |
+| `close()` | Closes the connection. Does nothing to a client you supplied yourself. |
+
+| Option | Default | Description |
+|---|---|---|
+| `uri` | — | A `mongodb://` or `mongodb+srv://` URI, taking precedence over the fields below |
+| `host` / `port` | `localhost` / `27017` | |
+| `database` | From `uri`, else `test` | |
+| `user` / `password` | — | |
+| `authSource` | `admin` | |
+| `collections` | all | Restrict analysis to these collections |
+| `outputDir` | `./reports` | Where `generateReport` writes |
+| `slowQueryThresholdMs` | `100` | |
+| `minIndexAccesses` | `50` | Below this, an index is considered unused |
+| `schemaSampleSize` | `1000` | Documents sampled per collection |
+| `thresholds` | built-in | Override the health thresholds |
+| `client` | — | Use an existing `MongoClient`; you keep ownership and `close()` will not disconnect it |
+
+The analyzers, collectors, reporters and every report type are exported too, so you can
+assemble a different pipeline — see [`src/index.ts`](src/index.ts) for the full surface.
 
 ---
 
@@ -397,23 +443,28 @@ await analyzer.close();
 
 ## Architecture
 
-```
+```text
 db-analyzer-mongo/
-├── index.ts                         # Entry point + CLI
-├── package.json
 ├── src/
+│   ├── cli/main.ts                  # CLI entry point (the `mongo-analyzer` binary)
+│   ├── index.ts                     # Library entry point, no side effects
+│   ├── api.ts                       # MongoAnalyzer, the programmatic API
+│   ├── cli/{options,runner,validate}.ts
+│   ├── config/{loader,thresholds}.ts # Config, profiles, tunable thresholds
+│   ├── connection.ts                # Connection URI building
+│   ├── constants.ts
 │   ├── types.ts                     # Shared types
-│   ├── interactive.ts               # Interactive CLI
-│   ├── config/thresholds.ts         # Tunable thresholds
-│   ├── utils/{formatting,health,errors}.ts
 │   ├── analyzers/
 │   │   ├── collection-analyzer.ts
 │   │   ├── index-analyzer.ts
 │   │   ├── query-analyzer.ts
 │   │   └── schema-analyzer.ts
 │   ├── collectors/stats-collector.ts
-│   └── reporters/report-generator.ts
-├── .github/copilot-instructions.md  # AI agent workflow
+│   ├── interactive/{index,display,menus}.ts
+│   ├── reporters/{report-generator,html-reporter,diff-reporter}.ts
+│   ├── utils/{format,health,errors,collection-filters}.ts
+│   └── watch/runner.ts              # Watch mode loop
+├── tests/                           # Automated tests
 ├── .env.example
 └── reports/                         # Generated reports (gitignored)
 ```

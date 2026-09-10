@@ -111,6 +111,9 @@ export function parseOptions(argv = process.argv.slice(2)): ParsedOptions {
 			case "--slow-query-threshold":
 				options.slowQueryThreshold = Number.parseInt(argv[++index], 10);
 				break;
+			case "--schema-sample-size":
+				options.schemaSampleSize = Number.parseInt(argv[++index], 10);
+				break;
 			case "--min-index-accesses":
 				options.minIndexAccesses = Number.parseInt(argv[++index], 10);
 				break;
@@ -190,6 +193,7 @@ Connection options:
 Analysis options:
   --slow-query-threshold <ms>    Slow query threshold in ms (default: ${DEFAULTS.slowQueryThreshold})
   --min-index-accesses <n>       Min accesses to consider index used (default: ${DEFAULTS.minIndexAccesses})
+  --schema-sample-size <n>       Documents sampled per collection for schema analysis (default: ${DEFAULTS.schemaSampleSize})
   --collections <list>           Comma-separated collections to analyze
   --compare <path>               Compare against a previous JSON report
   --watch [seconds]              Watch mode (default interval: ${DEFAULTS.watchInterval}s)
