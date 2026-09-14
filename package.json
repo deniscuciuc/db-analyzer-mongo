@@ -68,7 +68,7 @@
     "mongodb": "^7.6.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.12",
+    "@biomejs/biome": "2.5.13",
     "@types/node": "^22.20.1",
     "ts-node": "^10.9.2",
     "typescript": "^7.0.2"
